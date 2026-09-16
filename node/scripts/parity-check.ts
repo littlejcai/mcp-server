@@ -55,6 +55,31 @@ async function main(): Promise<void> {
     }
   };
   try {
+    // Until the N1 cutover the Node side carries tools Python does not have
+    // (get_job/list_jobs landed early with async jobs — docs/NODE-PLAN.md
+    // §并行期治理), so compare the common surface and pin the divergence.
+    const namesA = (await a.listTools()).tools.map((t) => t.name).sort();
+    const namesB = (await b.listTools()).tools.map((t) => t.name).sort();
+    const common = namesA.filter((n) => namesB.includes(n));
+    const onlyA = namesA.filter((n) => !namesB.includes(n));
+    const onlyB = namesB.filter((n) => !namesA.includes(n));
+    const commonKey = JSON.stringify(common);
+    const expectedCommon = JSON.stringify(
+      ["describe_skill", "list_skills", "run_skill"].sort(),
+    );
+    const expectedOnlyA = JSON.stringify(["get_job", "list_jobs"]);
+    const surfaceOk =
+      commonKey === expectedCommon &&
+      JSON.stringify(onlyA) === expectedOnlyA &&
+      onlyB.length === 0;
+    if (surfaceOk) {
+      console.log(`  ok  tools/list (common: ${common.join(", ")}; Node-first: ${onlyA.join(", ")})`);
+    } else {
+      failures++;
+      console.error(
+        `  FAIL tools/list\n    A: ${namesA.join(", ")}\n    B: ${namesB.join(", ")}`,
+      );
+    }
     compare(
       "list_skills",
       JSON.parse(textOf(await a.callTool({ name: "list_skills", arguments: {} }))),

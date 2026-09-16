@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { AuditLog } from "./audit.js";
 import { loadConfig } from "./config.js";
 import { Hub } from "./hub.js";
+import { JobStore } from "./jobs.js";
 import { findRepoRoot } from "./paths.js";
 import { SkillRegistry } from "./registry.js";
 import { ScriptRunner } from "./runner.js";
@@ -35,6 +36,7 @@ function main(): void {
     new ScriptRunner(registry, config.workspaceRoot),
     audit,
     new Semaphore(config.globalConcurrency),
+    new JobStore(),
   );
   const app = buildApp({ registry, hub, token: loadToken(REPO_ROOT) });
 

@@ -15,6 +15,11 @@ from typing import Any
 
 ENVELOPE_KEYS = ("status", "summary", "data", "artifacts", "warnings")
 
+# In-band contract version, stamped by the hub on every request and response
+# envelope (never taken from skill output). Kept in lockstep with the Node
+# implementation (node/src/envelope.ts) — see docs/NODE-PLAN.md §并行期治理.
+ENVELOPE_VERSION = 1
+
 
 def build_request(
     skill_id: str,
@@ -28,6 +33,7 @@ def build_request(
     # in inputs, so a skill may read it from either place.
     action = inputs.get("action", "run") if isinstance(inputs, dict) else "run"
     request = {
+        "v": ENVELOPE_VERSION,
         "request_id": f"req_{uuid.uuid4().hex[:12]}",
         "action": action,
         "skill_id": skill_id,
@@ -77,7 +83,8 @@ def parse_envelope(raw: str) -> dict[str, Any]:
 
 
 def _normalize(data: dict[str, Any]) -> dict[str, Any]:
-    envelope = {key: data.get(key) for key in ENVELOPE_KEYS}
+    envelope: dict[str, Any] = {"v": ENVELOPE_VERSION}
+    envelope.update({key: data.get(key) for key in ENVELOPE_KEYS})
     envelope["status"] = envelope["status"] or "error"
     envelope["summary"] = envelope["summary"] or ""
     envelope["data"] = envelope["data"] if isinstance(envelope["data"], dict) else {}
@@ -92,6 +99,7 @@ def _normalize(data: dict[str, Any]) -> dict[str, Any]:
 
 def error_envelope(message: str) -> dict[str, Any]:
     return {
+        "v": ENVELOPE_VERSION,
         "status": "error",
         "summary": message,
         "data": {},

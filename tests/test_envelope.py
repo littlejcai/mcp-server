@@ -56,9 +56,20 @@ def test_parse_invalid_raises():
 def test_error_envelope_shape():
     env = error_envelope("boom")
     assert env == {
+        "v": 1,
         "status": "error",
         "summary": "boom",
         "data": {},
         "artifacts": [],
         "warnings": [],
     }
+
+
+def test_version_stamped_on_request_and_response():
+    import json as _json
+
+    request = _json.loads(build_request("md-stats", {}))
+    assert request["v"] == 1
+
+    env = parse_envelope('{"status": "success"}')
+    assert env["v"] == 1  # hub stamps it; never taken from skill output

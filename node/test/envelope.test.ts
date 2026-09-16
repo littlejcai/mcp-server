@@ -1,6 +1,6 @@
 import { describe, expect, it } from "./expect.js";
 
-import { buildRequest, errorEnvelope, parseEnvelope } from "../src/envelope.js";
+import { ENVELOPE_VERSION, buildRequest, errorEnvelope, parseEnvelope } from "../src/envelope.js";
 
 describe("parseEnvelope", () => {
   it("parses a plain JSON envelope and normalizes fields", () => {
@@ -12,17 +12,24 @@ describe("parseEnvelope", () => {
     expect(env.data).toEqual({ words: 12 });
     expect(env.artifacts).toEqual([]);
     expect(env.warnings).toEqual([]);
+    expect(env.v).toBe(ENVELOPE_VERSION);
   });
 
   it("fills defaults for missing keys", () => {
     const env = parseEnvelope('{"status": "error"}');
     expect(env).toMatchObject({
+      v: ENVELOPE_VERSION,
       status: "error",
       summary: "",
       data: {},
       artifacts: [],
       warnings: [],
     });
+  });
+
+  it("stamps v itself, never trusting skill output", () => {
+    const env = parseEnvelope('{"v": 99, "status": "success"}');
+    expect(env.v).toBe(ENVELOPE_VERSION);
   });
 
   it("extracts JSON from a fenced block", () => {
@@ -53,6 +60,7 @@ describe("parseEnvelope", () => {
 describe("buildRequest", () => {
   it("mirrors inputs.action and keeps it in inputs", () => {
     const req = JSON.parse(buildRequest("s", { action: "special", x: 1 }));
+    expect(req.v).toBe(ENVELOPE_VERSION);
     expect(req.action).toBe("special");
     expect(req.inputs.action).toBe("special");
     expect(req.skill_id).toBe("s");
@@ -70,6 +78,13 @@ describe("buildRequest", () => {
 
 describe("errorEnvelope", () => {
   it("has the error shape", () => {
-    expect(errorEnvelope("bad")).toMatchObject({ status: "error", summary: "bad" });
+    expect(errorEnvelope("bad")).toEqual({
+      v: ENVELOPE_VERSION,
+      status: "error",
+      summary: "bad",
+      data: {},
+      artifacts: [],
+      warnings: [],
+    });
   });
 });

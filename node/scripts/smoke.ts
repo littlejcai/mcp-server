@@ -88,8 +88,10 @@ async function main(): Promise<void> {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
     check(
-      "tools/list has the dispatcher trio",
-      ["describe_skill", "list_skills", "run_skill"].every((n) => names.includes(n)),
+      "tools/list has the dispatcher trio + job tools",
+      ["describe_skill", "get_job", "list_jobs", "list_skills", "run_skill"].every(
+        (n) => names.includes(n),
+      ),
       `(got ${names.join(", ")})`,
     );
 
@@ -122,8 +124,61 @@ async function main(): Promise<void> {
     const envelope = run.isError ? null : JSON.parse(textOf(run));
     check(
       "run_skill(md-stats) succeeds on inbox/sample-note.md",
-      envelope?.status === "success" && typeof envelope?.data?.words === "number",
+      envelope?.status === "success" && envelope?.v === 1 && typeof envelope?.data?.words === "number",
       JSON.stringify(envelope ?? textOf(run)),
+    );
+
+    const submit = await client.callTool({
+      name: "run_skill",
+      arguments: {
+        skill_id: "md-stats",
+        inputs: { source_path: "inbox/sample-note.md" },
+        run_mode: "async",
+      },
+    });
+    const handle = submit.isError ? null : JSON.parse(textOf(submit));
+    let asyncOk = handle?.job_id?.startsWith("job_") === true;
+    if (asyncOk) {
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const poll = JSON.parse(
+          textOf(
+            await client.callTool({
+              name: "get_job",
+              arguments: { job_id: handle.job_id },
+            }),
+          ),
+        );
+        if (poll.status === "succeeded") {
+          asyncOk = poll.envelope?.status === "success" && typeof poll.envelope?.data?.words === "number";
+          break;
+        }
+        if (poll.status === "failed") {
+          asyncOk = false;
+          check("async job detail", false, poll.error ?? "failed");
+          break;
+        }
+        if (Date.now() > deadline) {
+          asyncOk = false;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    check(
+      "run_skill(async) → get_job resolves with a success envelope",
+      asyncOk === true,
+      JSON.stringify(handle ?? textOf(submit)),
+    );
+
+    const jobsPage = await client.callTool({
+      name: "list_jobs",
+      arguments: { limit: 10 },
+    });
+    const jobList = jobsPage.isError ? null : JSON.parse(textOf(jobsPage));
+    check(
+      "list_jobs returns recent submissions",
+      Array.isArray(jobList) && jobList.some((j: { job_id: string }) => j.job_id === handle?.job_id),
     );
 
     const bad = await client.callTool({

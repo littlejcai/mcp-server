@@ -35,6 +35,22 @@ Node 版替换 Python 版的硬性门槛（N1 完成）：
 
 配套 `node/scripts/parity-check.ts`：同一 MCP client 分别连两端，自动执行上述对比。
 
+## 2.5 并行期治理（N0.5 起）
+
+Python 版与 Node 版并存期间（至 N1 切换完成）：
+
+1. **Python 侧冻结**：安全相关代码（security/runner/agent_runner）与新功能冻结，
+   只接受 critical fix；唯一例外是两端同步的契约对齐改动（如 envelope `v` 字段，
+   一行级、向后兼容、必须同一次改动里两端落地并各自更新测试）。
+2. **Node 先行契约**：`run_skill` 的 `run_mode: sync|async`、`get_job`、
+   `list_jobs` 已在 Node 侧落地（异步作业语义从 N2 提前，见 §6 备注 8）。
+   Python 冻结期不实现；parity 工具面对比取**交集**，并断言 Node 侧多出的
+   工具恰好是这一清单。
+3. **新功能只进 Node**：AgentRunner、first-class 工具（N1）、REST、UI 全部只在
+   Node 侧开发，Python 不再跟进，避免双份内核各自演化。
+
+---
+
 ## 3. N0 · 本次交付（MVP，v0.1.0）
 
 **范围**：核心执行回路跑通——脚本型技能端到端可用。
@@ -60,11 +76,12 @@ envelope 与 Python 版一致；
 
 | NT | 版本 | 内容 | 对应 | 验收门 |
 |---|---|---|---|---|
-| **N0** | v0.1 | **本次 MVP**：核心回路（见上） | ≈ M0 证明 | Gate-NT0 |
-| **N1** | v0.2 | **完整契约对齐**：AgentRunner（`claude -p`，stdin prompt、结果文件回读、树击杀）+ first-class 动态工具（JSON Schema→zod）+ parity 全量金样测试 | ≈ Python v1 全量 | Gate-NT1：五条 parity 原则全过；此后可切流，Python 版保留一个版本期 |
-| **N2** | v0.3 | **地基**：server/api/core 分层定型；REST API 出口（UI 消费用，与 MCP 同一执行核）；JobStore 抽象（内存→SQLite）；`skillhub` CLI 入口 | M1 | REST 与 MCP 同契约；JobStore 可换实现 |
-| **N3** | v0.4 | **信任与隔离**：主体/scope/风险上限授权；上传第一阶段（仅 SKILL.md 校验）；审计查询 API；驱动接口（容器隔离） | M2 | 陌生代码不可越权；授权关掉后核心功能不回归 |
-| **N4** | v0.5 | **产品可用（本项目初衷）**：Web UI（技能目录/调用记录/审计可视化/作业面板）+ BFF 或直连 N2 REST；用户管理界面；SKILL.md 上传流 | M3 | 沿用 Gate-3：**关掉 UI，hub 全功能不受影响；UI 只是普通客户端** |
+| **N0** | v0.1 | **MVP**：核心回路（见上） | ≈ M0 证明 | Gate-NT0 |
+| **N0.5** | v0.2 | **契约升级（已完成）**：异步作业语义（`run_mode` + `get_job`/`list_jobs` + 内存 JobStore，从 N2 提前）；envelope 带内版本号 `v: 1`（两端同步）；§2.5 并行期治理生效 | 契约地基 | 全套件 58/58 + 实弹 11/11 |
+| **N1** | v0.3 | **完整契约对齐**：AgentRunner（`claude -p`，stdin prompt、结果文件回读、树击杀）+ first-class 动态工具（JSON Schema→zod）+ parity 全量金样测试 | ≈ Python v1 全量 | Gate-NT1：五条 parity 原则全过；此后可切流，Python 版保留一个版本期 |
+| **N2** | v0.4 | **地基**：server/api/core 分层定型；REST API 出口（UI 消费用，与 MCP 同一执行核）；JobStore 内存→SQLite 持久化；`skillhub` CLI 入口 | M1 | REST 与 MCP 同契约；JobStore 可换实现 |
+| **N3** | v0.5 | **信任与隔离**：主体/scope/风险上限授权；上传第一阶段（仅 SKILL.md 校验）；审计查询 API；驱动接口（容器隔离） | M2 | 陌生代码不可越权；授权关掉后核心功能不回归 |
+| **N4** | v0.6 | **产品可用（本项目初衷）**：Web UI（技能目录/调用记录/审计可视化/作业面板）+ BFF 或直连 N2 REST；用户管理界面；SKILL.md 上传流 | M3 | 沿用 Gate-3：**关掉 UI，hub 全功能不受影响；UI 只是普通客户端** |
 | **N5+** | v1.0→ | 开源发布、签名、驱动接口 v1 冻结、技能分发协议、企业特性、多节点 | M4–M6 | 跟随 ROADMAP.md 节奏，不另立路线 |
 
 依赖关系：N1 依赖 N0；N2 的 REST 依赖 N1 的完整执行核；N3 依赖 N2 的分层；
@@ -100,3 +117,10 @@ N4 依赖 N2（REST）+ N3（授权）；N5 依赖 N3 的签名与驱动接口�
    与 node:test 的文件级子进程）注入 `--require tsx` 加载器，在高负载机器上
    每个子进程启动退化为数十秒级。因此所有脚本统一 `tsc` 编译到 `dist/` 后用
    纯 `node` 运行（`npm start/test/smoke`），技能子进程保持干净的 plain node。
+8. **异步作业语义 Node 先行**（原 N2 的 JobStore 语义提前到 N0.5 落地）：
+   `run_skill` 新增 `run_mode: sync|async`（默认 sync，向后兼容），async 校验
+   快失败后立即返回 `{job_id}`，`get_job`/`list_jobs` 查询；作业经同一个全局
+   信号量与同一套审计策略（审计动作与同步路径逐字段一致：SkillHubError→
+   rejected，其他→failed，成功→success）。JobStore 为内存实现（重启即失），
+   N2 换 SQLite 时保持同一记录形状。`v` 字段为 envelope 带内契约版本号，
+   由 hub 强制盖戳（永不取自技能输出），两端实现已同步。

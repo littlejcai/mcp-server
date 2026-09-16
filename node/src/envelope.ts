@@ -6,7 +6,12 @@
 
 export const ENVELOPE_KEYS = ["status", "summary", "data", "artifacts", "warnings"] as const;
 
+/** In-band contract version, stamped by the hub on every request and response
+ * envelope (never taken from skill output). Bump on breaking envelope changes. */
+export const ENVELOPE_VERSION = 1;
+
 export interface Envelope {
+  v: number;
   status: string;
   summary: string;
   data: Record<string, unknown>;
@@ -28,6 +33,7 @@ export function buildRequest(
       ? String((inputs as Record<string, unknown>).action)
       : "run";
   const request = {
+    v: ENVELOPE_VERSION,
     request_id: `req_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
     action,
     skill_id: skillId,
@@ -98,6 +104,7 @@ export function parseEnvelope(raw: string | null | undefined): Envelope {
 function normalizeEnvelope(data: Record<string, unknown>): Envelope {
   const warnings = data.warnings;
   return {
+    v: ENVELOPE_VERSION,
     status: (data.status as string) || "error",
     summary: (data.summary as string) || "",
     data:
@@ -111,6 +118,7 @@ function normalizeEnvelope(data: Record<string, unknown>): Envelope {
 
 export function errorEnvelope(message: string): Envelope {
   return {
+    v: ENVELOPE_VERSION,
     status: "error",
     summary: message,
     data: {},

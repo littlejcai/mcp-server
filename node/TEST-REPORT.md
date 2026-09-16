@@ -1,10 +1,10 @@
 # skill-hub Node 版（N0 MVP）测试报告
 
-- 日期：2026-09-16
-- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0 里程碑）
-- 结论：**50/50 自动化测试通过（全真进程：真实子进程、真实超时击杀、真实 HTTP）；
-  端到端实弹冒烟 9/9 通过（真实服务 + 真实技能脚本 + 独立 MCP client）；
-  类型检查（strict TS）零错误；全套件耗时 8.9s**
+- 日期：2026-09-16（N0.5 修订：异步作业与 envelope 版本号入契约后更新）
+- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0 + N0.5）
+- 结论：**58/58 自动化测试通过（全真进程：真实子进程、真实超时击杀、真实 HTTP）；
+  端到端实弹冒烟 11/11 通过（真实服务 + 真实技能脚本 + 独立 MCP client，
+  含异步作业往返）；类型检查（strict TS）零错误；全套件耗时约 9s**
 
 ## 1. 测试环境
 
@@ -18,13 +18,14 @@
 | 被调技能运行时 | python3（真实 md-stats 技能脚本）；Node fixture 技能 |
 | 运行器 | node:test（vitest 因本机环境病理性停滞被替换，见 §5） |
 
-## 2. 自动化测试（50/50 通过，12 个套件，8.9s）
+## 2. 自动化测试（58/58 通过，13 个套件）
 
 | 测试文件 | 覆盖模块 | 用例 | 结果 |
 | --- | --- | --- | --- |
-| app.test.ts | app.ts（HTTP 层） | 7 | 全过 |
-| envelope.test.ts | envelope.ts | 9 | 全过 |
+| app.test.ts | app.ts（HTTP 层 + MCP 工具面） | 8 | 全过 |
+| envelope.test.ts | envelope.ts（含 v 版本戳） | 10 | 全过 |
 | hub.test.ts | hub.ts（执行核） | 4 | 全过 |
+| job.test.ts（N0.5 新增） | jobs.ts + hub.submit（异步作业） | 6 | 全过 |
 | registry.test.ts | registry.ts | 9 | 全过 |
 | runner.test.ts | runner.ts（真实子进程） | 10 | 全过 |
 | security.test.ts | security.ts | 11 | 全过 |
@@ -40,13 +41,15 @@
 | times out and reports the kill | 2s 超时，**进程树 SIGKILL** | test_timeout_raises | ✅ |
 | surfaces nonzero exits with scrubbed stderr | 退出码 2 + `token=supersecret123` → `[REDACTED]` | （Python 同行为） | ✅ |
 | serializes executions under the limit | 并发 2 路，最大重叠数 = 1 | test_global_semaphore_serializes_executions | ✅ |
+| runs async jobs through the same global semaphore | 异步 2 路提交，最大重叠数 = 1（作业与同步共用限流） | （N0.5 新语义） | ✅ |
+| submits an async job and resolves it via get_job | MCP 层异步往返：submit → 轮询 → succeeded + envelope | （N0.5 新语义） | ✅ |
 | maps hub errors to tool errors | 未知技能 / Schema 违规 / 路径逃逸关键词一致 | test_server.py 4 例 | ✅ |
 | rejects /mcp without or with wrong token | 无/错 token 均 401，timingSafeEqual 比较 | test_mcp_without_token_is_401 等 | ✅ |
 | answers 405 for GET /mcp | 无状态模式协议允许行为 | （Python 为有状态 SSE，N2 对齐） | ✅ |
 | symlink escape rejected | 链接在内、目标在外 → 拒绝 | test_security.py 同类 | ✅ |
 | meta-schema rejects unknown runtime keys | `timeout_second` 拼写错误 → registry 拒载 | （防 typo 静默失效） | ✅ |
 
-## 3. 实弹验证（真实服务器，非 mock，9/9）
+## 3. 实弹验证（真实服务器，非 mock，11/11）
 
 启动 `node dist/src/main.js`（读仓库共享 config.yaml；因本机 `python` 不在
 PATH，用 `HUB_REGISTRY_PATH` 覆盖将 md-stats 的可执行改为 `python3`，
@@ -57,13 +60,15 @@ HTTP + Bearer 全链路验证：
 | --- | --- | --- |
 | 1 | `GET /health` 免鉴权 | ✅ 200 `{ok:true, skills:2}` |
 | 2 | 无 token / 错 token 访问 `/mcp` | ✅ 401 |
-| 3 | `tools/list` 发现 3 个调度工具 | ✅ |
+| 3 | `tools/list` 发现 5 个工具（3 调度 + 2 作业） | ✅ |
 | 4 | `list_skills` 返回真实 registry 目录（md-stats + note-worthiness） | ✅ |
 | 5 | `describe_skill(md-stats)` 暴露 input schema 与超时 | ✅ |
-| 6 | **`run_skill(md-stats)` 真实执行 Python 技能脚本**（stdin envelope → python3 子进程 → stdout envelope） | ✅ status=success |
-| 7 | 未知技能 → `isError=true` + "Unknown skill" | ✅ |
-| 8 | 路径逃逸 `../../etc` → `isError=true` + "outside the allowed workspace" | ✅ |
-| 9 | 审计日志落盘（成功/拒绝均写入，与 Python 版共用 `logs/audit.jsonl`，格式一致） | ✅ |
+| 6 | **`run_skill(md-stats)` 真实执行 Python 技能脚本**（stdin envelope → python3 子进程 → stdout envelope，含 `v: 1` 版本戳） | ✅ status=success |
+| 7 | **`run_skill(async)` → `get_job` 轮询至 succeeded**，envelope 完整 | ✅ |
+| 8 | `list_jobs` 返回最近提交（含 7 的 job） | ✅ |
+| 9 | 未知技能 → `isError=true` + "Unknown skill" | ✅ |
+| 10 | 路径逃逸 `../../etc` → `isError=true` + "outside the allowed workspace" | ✅ |
+| 11 | 审计日志落盘（成功/拒绝均写入，与 Python 版共用 `logs/audit.jsonl`，格式一致） | ✅ |
 
 ## 4. 移植中发现并修复的问题
 
@@ -82,6 +87,7 @@ HTTP + Bearer 全链路验证：
 | 4 | 高 | vitest runner 子进程在同一位置病理性空转（栈：`uv__wait_children → OnExit → JS 回调`），单文件 5 分钟无结果 | 本机高负载（8 核 / load 60+）下 vitest worker 的已知形态。换 **node:test** 单进程顺序执行；vitest 断言面由 `test/expect.ts` 约 200 行垫片承接 |
 | 5 | 高 | 测试/服务经 tsx 运行时，`spawn` 出的每个 node 子进程（含技能子进程、node:test 文件级子进程）被注入 `--experimental-import-meta-resolve --require tsx` 加载器，高负载下子进程启动退化到分钟级 | **tsx 彻底移出运行路径**：统一 `tsc` 编译到 `dist/` 后用纯 `node` 运行（`npm start/test/smoke`）。技能子进程始终是干净的 plain node，也更接近生产形态 |
 | 6 | 低 | repo 根定位用 import.meta 相对层数，编译后（dist/ 深一层）会错位 | 改为 `findRepoRoot`：从当前目录向上查找 `registry.yaml` 标记，src 与 dist 双形态均正确 |
+| 7 | 低 | 作业状态快照断言竞态：submit 返回的是活引用，信号量空闲时后台执行在返回前已把状态推进到 running | 测试改为区间断言（queued ∨ running）；语义记录在案：`submit` 返回的 status 是快照，终态以 `get_job` 为准 |
 
 ## 5. 与 Python 版的有意行为差异（均已记录于 docs/NODE-PLAN.md §6）
 
@@ -104,6 +110,8 @@ HTTP + Bearer 全链路验证：
 - **Windows 平台**：已按 Python 版移植 PATHEXT/taskkill/大小写不敏感 containment，
   但本机为 macOS，未实机验证
 - 覆盖率计量未接入（Python 版为 92%；N1 计划接入 c8 后对齐口径）
+- **Python 侧 envelope `v` 字段改动需在原 Windows 环境复跑 pytest**
+  （本机无 Python 测试环境；改动为两行 + 测试同步，test_envelope.py 已更新）
 - 真实第三方设备（手机/Notion 连接器）、Tailscale、浸泡测试——与 Python 版遗留项相同
 
 ## 7. 安全扫描记录（Mimosa）

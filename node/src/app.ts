@@ -104,16 +104,63 @@ function createMcpServer(ctx: HubContext): McpServer {
       description:
         "Execute a registered skill. `inputs` must match its input schema. " +
         "`dry_run` defaults to true: write-capable skills only preview changes. " +
-        "Pass false to let the skill actually write.",
+        "Pass false to let the skill actually write. `run_mode` defaults to " +
+        '"sync"; use "async" to submit a job and poll get_job instead of blocking.',
       inputSchema: {
         skill_id: z.string(),
         inputs: z.record(z.string(), z.unknown()).optional(),
         dry_run: z.boolean().default(true),
+        run_mode: z.enum(["sync", "async"]).default("sync"),
       },
     },
-    async ({ skill_id, inputs, dry_run }) => {
+    async ({ skill_id, inputs, dry_run, run_mode }) => {
       try {
-        return jsonResult(await ctx.hub.execute(skill_id, inputs ?? {}, dry_run, ""));
+        if (run_mode === "async") {
+          const job = ctx.hub.submit(skill_id, inputs ?? {}, dry_run, "");
+          return jsonResult({
+            job_id: job.job_id,
+            status: job.status,
+            skill_id: job.skill_id,
+            dry_run: job.dry_run,
+            submitted_at: job.submitted_at,
+          });
+        }
+        return jsonResult(
+          await ctx.hub.execute(skill_id, inputs ?? {}, dry_run, ""),
+        );
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_job",
+    {
+      description:
+        "Fetch one submitted job by id: status (queued/running/succeeded/failed), " +
+        "the response envelope once finished, and failure reason if any.",
+      inputSchema: { job_id: z.string() },
+    },
+    async ({ job_id }) => {
+      try {
+        return jsonResult(ctx.hub.job(job_id));
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_jobs",
+    {
+      description:
+        "List recently submitted jobs, newest first (default 20, max 100).",
+      inputSchema: { limit: z.number().int().min(1).max(100).default(20) },
+    },
+    async ({ limit }) => {
+      try {
+        return jsonResult(ctx.hub.jobs(limit));
       } catch (err) {
         return errorResult(err);
       }

@@ -9,6 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { AuditLog } from "../src/audit.js";
 import { buildApp } from "../src/app.js";
 import { Hub } from "../src/hub.js";
+import { JobStore } from "../src/jobs.js";
 import { ScriptRunner } from "../src/runner.js";
 import { Semaphore } from "../src/semaphore.js";
 import { buildFixture, type Fixture } from "./helpers.js";
@@ -26,6 +27,7 @@ beforeAll(async () => {
     new ScriptRunner(fixture.registry, fixture.workspaceRoot),
     new AuditLog(path.join(fixture.workspaceRoot, "logs")),
     new Semaphore(1),
+    new JobStore(),
   );
   const app = buildApp({ registry: fixture.registry, hub, token: TOKEN });
   await new Promise<void>((resolve) => {
@@ -79,12 +81,14 @@ describe("HTTP layer", () => {
 });
 
 describe("MCP tool surface over streamable HTTP", () => {
-  it("lists exactly the three dispatcher tools", async () => {
+  it("lists exactly the dispatcher and job tools", async () => {
     const client = await makeClient();
     try {
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
         "describe_skill",
+        "get_job",
+        "list_jobs",
         "list_skills",
         "run_skill",
       ]);
@@ -123,7 +127,63 @@ describe("MCP tool surface over streamable HTTP", () => {
       expect(result.isError).toBeFalsy();
       const envelope = JSON.parse(textOf(result));
       expect(envelope.status).toBe("success");
+      expect(envelope.v).toBe(1);
       expect(envelope.data.words).toBe(12);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("submits an async job and resolves it via get_job", async () => {
+    const client = await makeClient();
+    try {
+      const submit = await client.callTool({
+        name: "run_skill",
+        arguments: {
+          skill_id: "md-stats-js",
+          inputs: { source_path: "inbox/a.md" },
+          run_mode: "async",
+        },
+      });
+      expect(submit.isError).toBeFalsy();
+      const handle = JSON.parse(textOf(submit));
+      expect(handle.job_id).toMatch(/^job_[0-9a-f]{12}$/);
+      // status is a snapshot; a free semaphore starts the job right away
+      expect(handle.status === "queued" || handle.status === "running").toBe(true);
+
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const poll = JSON.parse(
+          textOf(
+            await client.callTool({
+              name: "get_job",
+              arguments: { job_id: handle.job_id },
+            }),
+          ),
+        );
+        if (poll.status === "succeeded") {
+          expect(poll.envelope.status).toBe("success");
+          expect(poll.envelope.data.words).toBe(12);
+          break;
+        }
+        if (poll.status === "failed") {
+          throw new Error(`job failed: ${poll.error}`);
+        }
+        if (Date.now() > deadline) {
+          throw new Error(`job still ${poll.status} after 10s`);
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+
+      const listed = JSON.parse(
+        textOf(
+          await client.callTool({ name: "list_jobs", arguments: { limit: 10 } }),
+        ),
+      );
+      expect(Array.isArray(listed)).toBe(true);
+      expect(listed.some((j: { job_id: string }) => j.job_id === handle.job_id)).toBe(
+        true,
+      );
     } finally {
       await client.close();
     }

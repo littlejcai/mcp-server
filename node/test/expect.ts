@@ -152,7 +152,7 @@ function makeMatchers(actual: unknown, negated = false, allowNot = true) {
     toBeInstanceOf(ctor: AnyCtor): void {
       check(actual instanceof ctor, `expected value to be instance of ${String(ctor)}`);
     },
-    toThrow(expected?: RegExp | string): void {
+    toThrow(expected?: RegExp | string | (new (...args: never[]) => Error)): void {
       let err: unknown;
       let threw = false;
       try {
@@ -165,7 +165,11 @@ function makeMatchers(actual: unknown, negated = false, allowNot = true) {
       const ok =
         threw &&
         (expected === undefined ||
-          (expected instanceof RegExp ? expected.test(message) : message.includes(expected)));
+          (typeof expected === "function"
+            ? err instanceof expected
+            : expected instanceof RegExp
+              ? expected.test(message)
+              : message.includes(expected)));
       check(ok, `expected function to throw ${String(expected ?? "")}, got ${message || "nothing"}`);
     },
     rejects: {

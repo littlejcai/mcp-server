@@ -27,3 +27,10 @@ export class SkillExecutionError extends SkillHubError {
     this.name = "SkillExecutionError";
   }
 }
+
+export class UnknownJobError extends SkillHubError {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnknownJobError";
+  }
+}
