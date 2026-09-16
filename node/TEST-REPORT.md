@@ -106,7 +106,26 @@ HTTP + Bearer 全链路验证：
 - 覆盖率计量未接入（Python 版为 92%；N1 计划接入 c8 后对齐口径）
 - 真实第三方设备（手机/Notion 连接器）、Tailscale、浸泡测试——与 Python 版遗留项相同
 
-## 7. 结论
+## 7. 安全扫描记录（Mimosa）
+
+- 扫描：`scan-2026-09-16T12-43-44.393Z-60bccdfbaa9f`（deep，静态分析）
+- Seal：`sha256:942fda9181b0641755f40a1fbccc906bca7b6e734e19d8d29f139aed77c1257d`
+- 依赖：237 包，0 命中已知漏洞
+- 业务逻辑假设「敏感操作未观察到权限检查」（DELETE /mcp）：**已驳回**
+  （refuted）——/mcp 全部方法处于 Bearer 中间件之后，DELETE 当前仅返回 405
+
+**静态污点标记的人工确认（5 条 HIGH，均为"按设计即命中"）：**
+
+| 标记 | 人工复核结论 |
+| --- | --- |
+| `smoke.ts` expectStatus ×3 "SSRF 入口" | 开发者本机 CLI，按参数探测**自己的** hub 是其存在目的。已加固：目标默认限 loopback/私网段，公网需显式 `HUB_SMOKE_ALLOW_PUBLIC=1`；不接受攻击者输入，非服务面 |
+| `security.ts` resolve/resolveLoose "path-traversal 入口" | 这两个函数**就是防目录穿越的控件本身**（`x-path-scope` 围栏的执行点），源标记来自 env 派生的 workspace 根而非每次请求的不可信路径；逃逸/符号链接/空字节/绝对路径越界共 11 个测试用例全部通过 |
+
+扫描器自身标注该类结果"需要人工确认真实数据流和可利用性"（static advisory）。
+按其建议重构（删除 smoke 网络探测、或改写围栏控件以规避模式匹配）反而会
+删除功能或削弱安全控件，故记录确认而非修改。
+
+## 8. 结论
 
 N0 验收门（Gate-NT0）三条全部通过：① 测试全绿；② 真实服务经 HTTP+Bearer 调
 `run_skill` 成功执行真实技能，envelope 与 Python 版一致；③ 三类错误路径

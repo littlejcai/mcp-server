@@ -10,6 +10,31 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 const baseUrl = process.argv[2] ?? process.env.HUB_URL ?? "http://127.0.0.1:8811";
 const token = process.argv[3] ?? process.env.HUB_TOKEN ?? "";
 
+/** The hub is a LAN service; a smoke tool must not double as an arbitrary
+ * fetch primitive, so targets default to loopback/private ranges. */
+function assertLocalHttpUrl(raw: string): string {
+  const url = new URL(raw);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`unsupported scheme for smoke target: ${url.protocol}`);
+  }
+  const host = url.hostname;
+  const isLocal =
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host === "[::1]";
+  if (!isLocal && process.env.HUB_SMOKE_ALLOW_PUBLIC !== "1") {
+    throw new Error(
+      `refusing non-local smoke target ${host} — the hub is a LAN service; ` +
+        "set HUB_SMOKE_ALLOW_PUBLIC=1 to override deliberately",
+    );
+  }
+  return url.origin;
+}
+
 let failures = 0;
 function check(name: string, ok: boolean, detail = ""): void {
   if (ok) {
@@ -37,23 +62,24 @@ function textOf(result: unknown): string {
 }
 
 async function main(): Promise<void> {
-  console.log(`smoke against ${baseUrl}`);
+  const target = assertLocalHttpUrl(baseUrl);
+  console.log(`smoke against ${target}`);
 
-  await expectStatus("GET /health needs no token", `${baseUrl}/health`, {}, 200);
+  await expectStatus("GET /health needs no token", `${target}/health`, {}, 200);
   await expectStatus(
     "POST /mcp without token is 401",
-    `${baseUrl}/mcp`,
+    `${target}/mcp`,
     { method: "POST", body: "{}" },
     401,
   );
   await expectStatus(
     "POST /mcp with wrong token is 401",
-    `${baseUrl}/mcp`,
+    `${target}/mcp`,
     { method: "POST", headers: { authorization: "Bearer wrong" }, body: "{}" },
     401,
   );
 
-  const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
+  const transport = new StreamableHTTPClientTransport(new URL(`${target}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${token}` } },
   });
   const client = new Client({ name: "skill-hub-smoke", version: "0.0.1" });
