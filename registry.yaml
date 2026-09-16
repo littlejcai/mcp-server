@@ -1,0 +1,104 @@
+version: 1
+
+# skill-hub registry
+#
+# IMPORTANT (v1, no containers): only these rules are actually ENFORCED —
+#   * argv arrays, never a shell string; executable is fixed here, callers
+#     cannot influence it
+#   * every *_path-style input is resolved and confined to the workspace
+#     roots listed under permissions.filesystem
+#   * subprocess environment = Windows base + permissions.environment.allow
+#   * timeout + global concurrency limit + output caps
+# Everything else in `permissions` (network: false etc.) is declarative
+# intent, enforced for real only after container isolation lands.
+
+skills:
+  md-stats:
+    name: Markdown 统计
+    description: >
+      统计 workspace 内 Markdown 文件的字数、行数与标题结构，
+      可选生成报告文件。脚本型示例 Skill。
+    type: script
+    risk_level: workspace_write
+    first_class: true
+
+    runtime:
+      executable: python
+      args:
+        - skills/md-stats/run.py
+      working_directory: .
+      timeout_seconds: 60
+      max_stdout_bytes: 100000
+
+    input_schema:
+      type: object
+      properties:
+        source_path:
+          type: string
+          x-path-scope: read
+          description: 待统计的 Markdown 文件路径（相对 workspace 或绝对路径）
+        output_path:
+          type: string
+          x-path-scope: write
+          description: 报告输出路径（相对 workspace，dry_run=false 时写入）
+        top_headings:
+          type: integer
+          description: 报告中列出的标题数量上限
+          default: 10
+      required:
+        - source_path
+
+    permissions:
+      filesystem:
+        read:
+          - inbox
+          - output
+        write:
+          - output
+      network: false
+      environment:
+        allow: []
+
+  note-worthiness:
+    name: 素材值得写吗
+    description: >
+      读取一篇原始素材，从新颖性、情绪浓度、共鸣面、隐私风险四个维度
+      判断它是否值得发展成正式文章，给出结论与切入角度建议。
+      Agent 型示例 Skill（内层由 Claude Code 执行，只读）。
+    type: agent
+    risk_level: read_only
+    first_class: true
+
+    runtime:
+      provider: claude-code
+      executable: claude
+      skill_file: skills/note-worthiness/SKILL.md
+      model: haiku
+      max_turns: 15
+      timeout_seconds: 300
+      allowed_tools:
+        - Read
+        - Glob
+        - Grep
+        - Write
+
+    input_schema:
+      type: object
+      properties:
+        note_path:
+          type: string
+          x-path-scope: read
+          description: 素材文件路径（相对 workspace）
+      required:
+        - note_path
+
+    permissions:
+      filesystem:
+        read:
+          - inbox
+          - output
+        write:
+          - temp
+      network: false
+      environment:
+        allow: []

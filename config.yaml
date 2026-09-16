@@ -1,0 +1,9 @@
+server:
+  host: 0.0.0.0        # 127.0.0.1 = local only; 0.0.0.0 = LAN reachable
+  port: 8800
+
+registry: ./registry.yaml
+workspace_root: ./workspace
+
+limits:
+  global_concurrency: 1   # one skill process at a time; raise later if needed

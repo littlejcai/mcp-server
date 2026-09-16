@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.mimosa/
+logs/
+workspace/temp/
+workspace/output/
+secrets.token
+node_modules/
