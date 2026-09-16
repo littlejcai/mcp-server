@@ -419,8 +419,20 @@ Agent 型技能的多动作同理：在 SKILL.md 里写"请求的 action 决定�
 ## 八、测试
 
 ```bash
-.venv/Scripts/python -m pytest tests/ -q --cov=hub --cov=server    # 51 用例
+.venv/Scripts/python -m pytest tests/ -q --cov=hub --cov=server    # 53 用例
 cd tests/thirdparty && node verify_remote.mjs                      # 第三方客户端实测（需先启动 server）
 ```
 
 详细质量数据见 `TEST-REPORT.md`。
+
+## 九、产品演进方向
+
+本文档描述的是 v1（单用户、局域网、无隔离）的使用方式。产品向开源
+通用平台演进的路线——多用户登录、Web 界面、技能上传、Docker 隔离、
+作业队列与横向扩展——见：
+
+- [docs/ROADMAP.md](docs/ROADMAP.md)：v0.2 地基 → v0.3 安全 → v0.4 产品化 → v1.0 开源
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：第一性原理与目标架构
+
+演进不影响本篇的使用方式：契约（envelope / x-path-scope / 风险分级）
+在整个 v2 系列内向后兼容。

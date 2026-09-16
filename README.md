@@ -12,8 +12,10 @@ server.py ──► hub/ ──► skills/（脚本型 run.py · Agent 型 SKILL
               registry.yaml ────┘  ← 注册技能只改这里
 ```
 
-- **架构图 / 模块图 / 时序图 / 注册规范 / 多 Action 规范**：见 [USAGE.md](USAGE.md)
-- **质量数据（51 用例 / 覆盖率 92%）**：见 [TEST-REPORT.md](TEST-REPORT.md)
+- **使用说明**（架构图 / 模块图 / 时序图 / 注册规范 / 多 Action 规范）：见 [USAGE.md](USAGE.md)
+- **架构设计**（第一性原理 / 目标架构 / 升级清单）：见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **产品路线图**（v0.2 地基 → v0.3 安全 → v0.4 产品化 → v1.0 开源）：见 [docs/ROADMAP.md](docs/ROADMAP.md)
+- **质量数据**（53 用例 / 覆盖率 92%）：见 [TEST-REPORT.md](TEST-REPORT.md)
 
 ## 快速开始
 
