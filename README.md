@@ -71,6 +71,7 @@ open 任意路径（但 hub 传入的路径已校验）。因此 v1 **只注册�
 ├── skills/            # 技能本体（run.py 或 SKILL.md）
 ├── workspace/         # inbox / output / temp —— 技能只能碰这里
 ├── tests/             # 51 用例 + tests/thirdparty（Node SDK 实测）
+├── node/              # Node/TS 版服务端（N0 MVP，契约与 Python 版一致，见 docs/NODE-PLAN.md）
 ├── USAGE.md           # 使用说明（含架构图/模块图/时序图/注册规范）
 └── TEST-REPORT.md     # 测试报告
 ```

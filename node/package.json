@@ -1,0 +1,32 @@
+{
+  "name": "skill-hub-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "start": "npm run build && node dist/src/main.js",
+    "dev": "node --watch dist/src/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/",
+    "smoke": "node dist/scripts/smoke.js",
+    "parity": "node dist/scripts/parity-check.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "ajv": "^8.17.0",
+    "express": "^4.21.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
