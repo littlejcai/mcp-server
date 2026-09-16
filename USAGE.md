@@ -431,7 +431,8 @@ cd tests/thirdparty && node verify_remote.mjs                      # 第三方�
 通用平台演进的路线——多用户登录、Web 界面、技能上传、Docker 隔离、
 作业队列与横向扩展——见：
 
-- [docs/ROADMAP.md](docs/ROADMAP.md)：v0.2 地基 → v0.3 安全 → v0.4 产品化 → v1.0 开源
+- [docs/ROADMAP.md](docs/ROADMAP.md)：M0 个人工具 → M1 平台地基 → M2 信任隔离
+  → M3 产品可用 → M4 开源发布 → M5 生态扩展 → M6 规模平台（每阶段含验收门）
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：第一性原理与目标架构
 
 演进不影响本篇的使用方式：契约（envelope / x-path-scope / 风险分级）
