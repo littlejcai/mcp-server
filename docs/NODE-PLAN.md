@@ -80,7 +80,7 @@ envelope 与 Python 版一致；
 | **N0.5** | v0.2 | **契约升级（已完成）**：异步作业语义（`run_mode` + `get_job`/`list_jobs` + 内存 JobStore，从 N2 提前）；envelope 带内版本号 `v: 1`（两端同步）；§2.5 并行期治理生效 | 契约地基 | 全套件 58/58 + 实弹 11/11 |
 | **N1** | v0.3 | **完整契约对齐（已完成）**：AgentRunner（`claude -p`，stdin prompt、结果文件回读、树击杀、runtime.args 夹具通道）+ first-class 动态工具（JSON Schema→zod）+ parity 交集脚本 | ≈ Python v1 全量 | 代码侧与实弹 agent 链路已过；**双端 parity 已跑通**（2026-09-17 本机 Python venv + Node 分端口实测，PARITY OK），切流条件满足，见 §2.5 |
 | **N2** | v0.4 | **地基（已完成）**：server/api/core 分层定型（执行核 → `src/core/`，API 出口 → `src/api/`，装配 → `src/server/`）；REST API 出口（`/api/skills`、`/api/jobs`，与 MCP 同一执行核）；JobStore 接口化 + SQLite 持久化（`SqliteJobStore`，默认 sqlite，内存实现保留可换）；`skillhub` CLI 入口（list/describe/run/jobs/job） | M1 | REST 与 MCP 同契约（同 envelope、同错误语义，实弹验证）；JobStore 可换实现（接口 + 双实现 + 重启持久化实测） |
-| **N3** | v0.5 | **信任与隔离**：主体/scope/风险上限授权；上传第一阶段（仅 SKILL.md 校验）；审计查询 API；驱动接口（容器隔离） | M2 | 陌生代码不可越权；授权关掉后核心功能不回归 |
+| **N3** | v0.5 | **信任与隔离（已完成）**：主体/scope/风险上限授权（`core/authorization.ts`，config `authorization` 段，默认关闭 = 全放行）；上传第一阶段（`POST /api/skills/validate`，仅 SKILL.md frontmatter 校验，不落盘）；审计查询 API（`GET /api/audit`，过滤 + 分页，复用既有 JSONL）；驱动接口（`core/driver.ts` `ExecutionDriver` + `ProcessDriver` 默认实现，为容器隔离预留） | M2 | 陌生代码不可越权；授权关掉后核心功能不回归 |
 | **N4** | v0.6 | **产品可用（本项目初衷）**：Web UI（技能目录/调用记录/审计可视化/作业面板）+ BFF 或直连 N2 REST；用户管理界面；SKILL.md 上传流 | M3 | 沿用 Gate-3：**关掉 UI，hub 全功能不受影响；UI 只是普通客户端** |
 | **N5+** | v1.0→ | 开源发布、签名、驱动接口 v1 冻结、技能分发协议、企业特性、多节点 | M4–M6 | 跟随 ROADMAP.md 节奏，不另立路线 |
 

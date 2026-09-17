@@ -1,4 +1,4 @@
-# skill-hub Node 版使用说明（N2）
+# skill-hub Node 版使用说明（N3）
 
 > 与根目录 Python 版**契约完全一致**的 Node.js/TypeScript 服务端：
 > 同一份 `registry.yaml`、同一份 `config.yaml`、同一批技能、同一份审计日志。
@@ -7,7 +7,7 @@
 
 ---
 
-## 一、当前能力边界（N0 + N0.5 + N1 + N2）
+## 一、当前能力边界（N0 + N0.5 + N1 + N2 + N3）
 
 | 能力 | 状态 |
 | --- | --- |
@@ -23,7 +23,11 @@
 | **REST API 出口**（`/api/skills` · `/api/jobs`，与 MCP 同契约） | ✅ 可用（N2） |
 | **JobStore SQLite 持久化**（默认 sqlite，内存实现可换） | ✅ 可用（N2） |
 | **skillhub CLI**（list/describe/run/jobs/job） | ✅ 可用（N2） |
-| Web UI | ⏳ N4 |
+| **主体/scope/风险上限授权**（config `authorization`，默认关闭不回归） | ✅ 可用（N3） |
+| **SKILL.md 上传校验**（`POST /api/skills/validate`，第一阶段不落盘） | ✅ 可用（N3） |
+| **审计查询 API**（`GET /api/audit`，过滤 + 分页） | ✅ 可用（N3） |
+| **驱动接口**（`ExecutionDriver` + `ProcessDriver`，容器隔离预留） | ✅ 可用（N3） |
+| Web UI / 完整 SKILL.md 上传流 | ⏳ N4 |
 
 ## 二、架构（Node 版，N2 起三层定型）
 
@@ -134,6 +138,8 @@ list_jobs { limit }                    # 最近提交，新→旧
 | registry 路径 | `config.yaml` 的 `registry` | 可用环境变量 `HUB_REGISTRY_PATH` 覆盖 |
 | workspace 路径 | `config.yaml` 的 `workspace_root` | 可用 `HUB_WORKSPACE_ROOT` 覆盖 |
 | 并发上限 | `config.yaml` 的 `limits.global_concurrency` | 默认 1 |
+| 作业存储 | `config.yaml` 的 `job_store.type` | 默认 `sqlite`（持久化到 `./logs/jobs.db`），可换 `memory` |
+| 授权（N3） | `config.yaml` 的 `authorization` 段 | **不配置 = 关闭**（全放行）；配置即生效：`clients` + `default`（缺省拒绝），grant 含 `skills` 白名单与 `risk_limit` 风险上限 |
 | Bearer token | `HUB_TOKEN` 环境变量 → 仓库根 `secrets.token` | 与 Python 版共用同一凭据文件 |
 
 ## 五、注册技能

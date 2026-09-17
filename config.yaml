@@ -11,3 +11,13 @@ limits:
 job_store:
   type: sqlite            # memory | sqlite — sqlite persists async jobs to disk
   path: ./logs/jobs.db    # sqlite 时生效（logs/ 已被 gitignore，重启不丢作业）
+
+# authorization（N3）：不配置 = 关闭授权，全部放行（旧行为，核心功能不回归）；
+# 一旦配置 = 生效：未列出的 client 走 default，default 缺省 = 拒绝一切。
+# authorization:
+#   default: { risk_limit: read_only }          # 未列出的 client 默认只读
+#   clients:
+#     "rest":       { skills: [md-stats, note-worthiness], risk_limit: workspace_write }
+#     "first-class:md_stats": { skills: [md-stats], risk_limit: read_only }
+#     "cli":        { risk_limit: workspace_write }   # 管理员本机 CLI
+#     "":           { risk_limit: workspace_write }   # 未带 client 标识的调用（MCP run_skill）

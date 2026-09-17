@@ -1,7 +1,8 @@
 /** Execution core shared by the MCP dispatcher tools (port of server._execute),
  * extended with async job submission (run_mode=async). */
 
-import { AuditLog } from "./audit.js";
+import { AuditLog, type AuditEntry } from "./audit.js";
+import { Authorizer, denyNonePolicy, type AuthorizationPolicy } from "./authorization.js";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { AgentRunner } from "./agent_runner.js";
 import { UnknownJobError, SkillHubError } from "./errors.js";
@@ -18,9 +19,10 @@ export class Hub {
     private readonly semaphore: Semaphore,
     private readonly jobStore: JobStore,
     private readonly agentRunner?: AgentRunner,
+    private readonly authorizer: Authorizer = new Authorizer(denyNonePolicy()),
   ) {}
 
-  /** Sync execution: validate, take a semaphore slot, run, audit. */
+  /** Sync execution: authorize, validate, take a semaphore slot, run, audit. */
   async execute(
     skillId: string,
     inputs: Record<string, unknown> = {},
@@ -28,6 +30,7 @@ export class Hub {
     client = "",
   ): Promise<Envelope> {
     try {
+      this.authorize(client, skillId);
       this.registry.validateInputs(skillId, inputs);
       const runner = this.runnerFor(skillId);
       const envelope = await this.semaphore.run(() =>
@@ -72,6 +75,7 @@ export class Hub {
     client = "",
   ): JobRecord {
     try {
+      this.authorize(client, skillId);
       this.registry.validateInputs(skillId, inputs);
     } catch (err) {
       if (err instanceof SkillHubError) {
@@ -146,6 +150,21 @@ export class Hub {
   /** Newest-first page over recent submissions. */
   jobs(limit: number): JobRecord[] {
     return this.jobStore.list(limit);
+  }
+
+  /** Audit entries, newest first (REST /api/audit backing). */
+  auditEntries(q: {
+    limit?: number;
+    skill_id?: string;
+    status?: string;
+    client?: string;
+  }): Promise<AuditEntry[]> {
+    return this.audit.query(q);
+  }
+
+  private authorize(client: string, skillId: string): void {
+    const riskLevel = this.registry.get(skillId).risk_level as string | undefined;
+    this.authorizer.authorize(client, skillId, riskLevel);
   }
 
   private runnerFor(skillId: string): ScriptRunner | AgentRunner {

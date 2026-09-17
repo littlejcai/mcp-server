@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 process.removeAllListeners("warning");
 
 import { AuditLog } from "../core/audit.js";
+import { Authorizer, loadPolicy } from "../core/authorization.js";
 import { Hub } from "../core/hub.js";
 import { MemoryJobStore } from "../core/jobs.js";
 import { SkillRegistry } from "../core/registry.js";
@@ -45,6 +46,8 @@ export function buildHub(config: ReturnType<typeof loadConfig>): Hub {
     audit,
     new Semaphore(config.globalConcurrency),
     jobStore,
+    undefined,
+    new Authorizer(loadPolicy(config.authorization)),
   );
 }
 

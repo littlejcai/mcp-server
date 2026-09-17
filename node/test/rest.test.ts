@@ -169,3 +169,163 @@ describe("REST API", () => {
     expect(((await res.json()) as { error: string }).error).toMatch(/Unknown job/);
   });
 });
+
+describe("SKILL.md upload validation endpoint (N3)", () => {
+  it("accepts a well-formed SKILL.md without staging anything", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/skills/validate`,
+      authed("", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: "---\nname: brand-new\ndescription: A new skill.\n---\n\nBody.",
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { valid: boolean; name: string; errors: string[] };
+    expect(body.valid).toBe(true);
+    expect(body.name).toBe("brand-new");
+    expect(body.errors).toEqual([]);
+  });
+
+  it("rejects a bad SKILL.md with 422 and the error details", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/skills/validate`,
+      authed("", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: "name: no-fence\n---\nbody" }),
+      }),
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { valid: boolean; errors: string[] };
+    expect(body.valid).toBe(false);
+    expect(body.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("audit endpoint (N3)", () => {
+  // own fixture + server so the audit log starts empty (the shared fixture's
+  // log already has entries from earlier REST tests)
+  let auditFixture: Fixture;
+  let auditServer: Server;
+  let auditBaseUrl: string;
+
+  beforeAll(async () => {
+    auditFixture = buildFixture();
+    const hub = new Hub(
+      auditFixture.registry,
+      new ScriptRunner(auditFixture.registry, auditFixture.workspaceRoot),
+      new AuditLog(path.join(auditFixture.workspaceRoot, "logs")),
+      new Semaphore(1),
+      new MemoryJobStore(),
+    );
+    const app = buildApp({ registry: auditFixture.registry, hub, token: TOKEN });
+    await new Promise<void>((resolve) => {
+      auditServer = app.listen(0, "127.0.0.1", () => resolve());
+    });
+    const { port } = auditServer.address() as AddressInfo;
+    auditBaseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(() => new Promise<void>((resolve) => auditServer.close(() => resolve())));
+
+  it("returns an empty list before any invocation", async () => {
+    const res = await fetch(`${auditBaseUrl}/api/audit`, authed(""));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { entries: unknown[] }).entries).toEqual([]);
+  });
+
+  it("returns recorded invocations newest first and filters them", async () => {
+    await fetch(
+      `${auditBaseUrl}/api/skills/md-stats-js/run`,
+      authed("", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ inputs: { source_path: "inbox/a.md" } }),
+      }),
+    );
+    // audit writes are queued on an internal chain; poll until visible
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      const probe = await fetch(`${auditBaseUrl}/api/audit`, authed(""));
+      const { entries } = (await probe.json()) as { entries: unknown[] };
+      if (entries.length > 0) break;
+      if (Date.now() > deadline) throw new Error("audit entry never became visible");
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const all = await fetch(`${auditBaseUrl}/api/audit`, authed(""));
+    const { entries } = (await all.json()) as {
+      entries: Array<{ skill_id: string; status: string; client: string }>;
+    };
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries[0]!.skill_id).toBe("md-stats-js");
+    expect(entries[0]!.client).toBe("rest");
+
+    const filtered = await fetch(
+      `${auditBaseUrl}/api/audit?skill_id=md-stats-js&client=rest&limit=1`,
+      authed(""),
+    );
+    const { entries: few } = (await filtered.json()) as { entries: unknown[] };
+    expect(few.length).toBe(1);
+
+    const none = await fetch(`${auditBaseUrl}/api/audit?skill_id=failer`, authed(""));
+    expect(((await none.json()) as { entries: unknown[] }).entries).toEqual([]);
+  });
+});
+
+describe("REST authorization (N3)", () => {
+  let authFixture: Fixture;
+  let authServer: Server;
+  let authBaseUrl: string;
+
+  beforeAll(async () => {
+    authFixture = buildFixture();
+    const { Authorizer, loadPolicy } = await import("../src/core/authorization.js");
+    const hub = new Hub(
+      authFixture.registry,
+      new ScriptRunner(authFixture.registry, authFixture.workspaceRoot),
+      new AuditLog(path.join(authFixture.workspaceRoot, "logs")),
+      new Semaphore(1),
+      new MemoryJobStore(),
+      undefined,
+      new Authorizer(loadPolicy({ default: { skills: ["md-stats-js"] } })),
+    );
+    const app = buildApp({ registry: authFixture.registry, hub, token: TOKEN });
+    await new Promise<void>((resolve) => {
+      authServer = app.listen(0, "127.0.0.1", () => resolve());
+    });
+    const { port } = authServer.address() as AddressInfo;
+    authBaseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(() => new Promise<void>((resolve) => authServer.close(() => resolve())));
+
+  it("maps an authorization rejection to 403", async () => {
+    const res = await fetch(
+      `${authBaseUrl}/api/skills/failer/run`,
+      authed("", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ inputs: {} }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/not granted/);
+  });
+
+  it("lets an authorized client through", async () => {
+    const res = await fetch(
+      `${authBaseUrl}/api/skills/md-stats-js/run`,
+      authed("", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ inputs: { source_path: "inbox/a.md" } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { status: string }).status).toBe("success");
+  });
+});

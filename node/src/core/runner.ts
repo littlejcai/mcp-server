@@ -1,21 +1,13 @@
 /** Script-type runner: fixed executable + argv array + stdin envelope
- * (port of hub/runner.py).
- *
- * Platform specifics handled here:
- *   - timeout kills the whole tree: POSIX via detached process group +
- *     kill(-pid, SIGKILL) (deliberate improvement #2 in docs/NODE-PLAN.md —
- *     the Python version only kills the direct child on POSIX), Windows via
- *     ``taskkill /T /F``
- *   - stdout/stderr are capped while streaming so a runaway process cannot
- *     exhaust memory
- *   - child gets a minimal environment, not process.env
- */
+ * (port of hub/runner.py). Process lifecycle and confinement now go through
+ * the ExecutionDriver (N3): the default ProcessDriver spawns a child directly;
+ * a container/sandbox driver can replace it without touching this module. */
 
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 
+import { type ExecutionDriver, ProcessDriver } from "./driver.js";
 import { buildRequest, parseEnvelope, type Envelope } from "./envelope.js";
 import { SkillExecutionError, SkillInputError } from "./errors.js";
 import {
@@ -25,6 +17,8 @@ import {
   type SkillRegistry,
 } from "./registry.js";
 import { PathGuard, buildEnv, scrub } from "./security.js";
+
+export { killTree } from "./driver.js";
 
 /** Turn a registry executable name into an argv prefix the OS accepts.
  *
@@ -66,55 +60,6 @@ function whichSync(name: string): string | null {
   return null;
 }
 
-/** Terminate the whole child tree; plain kill() leaks grandchildren.
- * Shared with AgentRunner (same timeout semantics). */
-export function killTree(child: ChildProcess): void {
-  if (child.pid === undefined) return;
-  if (process.platform === "win32") {
-    try {
-      spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
-        timeout: 10_000,
-      });
-    } catch {
-      // best effort
-    }
-  } else {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      // already gone
-    }
-  }
-  try {
-    child.kill("SIGKILL");
-  } catch {
-    // already gone
-  }
-}
-
-/** Streaming collector that stores at most cap+1 bytes and keeps draining. */
-function cappedCollector(cap: number) {
-  let stored = 0;
-  let total = 0;
-  const chunks: Buffer[] = [];
-  return {
-    push(chunk: Buffer): void {
-      total += chunk.length;
-      if (stored <= cap) {
-        const take = chunk.subarray(0, cap + 1 - stored);
-        chunks.push(take);
-        stored += take.length;
-      }
-    },
-    text(): { text: string; truncated: boolean } {
-      return {
-        text: Buffer.concat(chunks).toString("utf8"),
-        truncated: total > cap,
-      };
-    },
-  };
-}
-
 export interface RunOptions {
   dryRun?: boolean;
   client?: string;
@@ -122,12 +67,15 @@ export interface RunOptions {
 
 export class ScriptRunner {
   readonly guard: PathGuard;
+  private readonly driver: ExecutionDriver;
 
   constructor(
     readonly registry: SkillRegistry,
     workspaceRoot: string,
+    driver: ExecutionDriver = new ProcessDriver(),
   ) {
     this.guard = new PathGuard(workspaceRoot);
+    this.driver = driver;
   }
 
   async run(
@@ -153,77 +101,42 @@ export class ScriptRunner {
     );
 
     const started = performance.now();
-    const stdoutCap = cappedCollector(maxStdout);
-    const stderrCap = cappedCollector(20_000);
-    let timedOut = false;
-    let exitCode: number | null = null;
-    let exitSignal: NodeJS.Signals | null = null;
-
-    const child = spawn(argv[0]!, argv.slice(1), {
+    const out = await this.driver.run({
+      argv,
       cwd: workdir,
       env,
-      stdio: ["pipe", "pipe", "pipe"],
-      // new process group on POSIX so the timeout can kill the whole tree
-      detached: process.platform !== "win32",
+      stdin: requestBody,
+      timeoutMs: timeoutSeconds * 1000,
+      maxStdoutBytes: maxStdout,
+      maxStderrBytes: 20_000,
     });
 
-    // the skill may exit before consuming stdin; EPIPE then is not an error
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(requestBody, "utf8");
-    child.stdout?.on("data", (chunk: Buffer) => stdoutCap.push(chunk));
-    child.stderr?.on("data", (chunk: Buffer) => stderrCap.push(chunk));
-
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const finish = (err?: Error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        err ? reject(err) : resolve();
-      };
-      const timer = setTimeout(() => {
-        timedOut = true;
-        killTree(child);
-      }, timeoutSeconds * 1000);
-      child.on("error", (err: NodeJS.ErrnoException) => {
-        if (err.code === "ENOENT") {
-          finish(
-            new SkillExecutionError(
-              `Executable for skill ${JSON.stringify(skillId)} not found: ${argv[0]} (${err.message})`,
-            ),
-          );
-        } else {
-          finish(
-            new SkillExecutionError(
-              `Skill ${JSON.stringify(skillId)} failed to start: ${err.message}`,
-            ),
-          );
-        }
-      });
-      child.on("close", (code, signal) => {
-        exitCode = code;
-        exitSignal = signal;
-        finish();
-      });
-    });
-
-    if (timedOut) {
+    if (out.timedOut) {
       throw new SkillExecutionError(
         `Skill ${JSON.stringify(skillId)} timed out after ${timeoutSeconds}s and was killed`,
       );
     }
 
-    if (exitCode !== 0) {
-      const stderrText = stderrCap.text().text;
-      const codeLabel = exitCode ?? `signal ${exitSignal}`;
+    if (out.spawnError) {
+      if (out.spawnError.code === "ENOENT") {
+        throw new SkillExecutionError(
+          `Executable for skill ${JSON.stringify(skillId)} not found: ${argv[0]} (${out.spawnError.message})`,
+        );
+      }
       throw new SkillExecutionError(
-        `Skill ${JSON.stringify(skillId)} exited with code ${codeLabel}: ${scrub(stderrText)}`,
+        `Skill ${JSON.stringify(skillId)} failed to start: ${out.spawnError.message}`,
       );
     }
 
-    const { text: stdoutText, truncated } = stdoutCap.text();
-    const envelope = parseEnvelope(stdoutText);
-    if (truncated) {
+    if (out.exitCode !== 0) {
+      const codeLabel = out.exitCode ?? `signal ${out.exitSignal}`;
+      throw new SkillExecutionError(
+        `Skill ${JSON.stringify(skillId)} exited with code ${codeLabel}: ${scrub(out.stderr)}`,
+      );
+    }
+
+    const envelope = parseEnvelope(out.stdout);
+    if (out.stdoutTruncated) {
       envelope.warnings.push("stdout exceeded cap and was truncated");
     }
     envelope.duration_ms = Math.round(performance.now() - started);

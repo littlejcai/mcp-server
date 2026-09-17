@@ -10,8 +10,10 @@ import {
   UnknownJobError,
   UnknownSkillError,
 } from "../core/errors.js";
+import { AuthorizationError } from "../core/authorization.js";
 import type { Hub } from "../core/hub.js";
 import type { SkillRegistry } from "../core/registry.js";
+import { validateSkillMarkdown } from "../core/skill_validate.js";
 
 export interface RestContext {
   registry: SkillRegistry;
@@ -21,6 +23,9 @@ export interface RestContext {
 function httpStatus(err: unknown): number {
   if (err instanceof UnknownSkillError || err instanceof UnknownJobError) {
     return 404;
+  }
+  if (err instanceof AuthorizationError) {
+    return 403;
   }
   if (err instanceof SkillInputError) {
     return 400;
@@ -108,6 +113,27 @@ export function restRouter(ctx: RestContext): Router {
     } catch (err) {
       res.status(httpStatus(err)).json(errorBody(err));
     }
+  });
+
+  // POST /api/skills/validate — SKILL.md upload phase 1 (N3): validate the
+  // frontmatter contract only; nothing is staged or registered yet (N4).
+  router.post("/skills/validate", (req, res) => {
+    const body = (req.body ?? {}) as { content?: string };
+    const result = validateSkillMarkdown(String(body.content ?? ""));
+    res.status(result.valid ? 200 : 422).json(result);
+  });
+
+  // GET /api/audit — audit log, newest first, with filters (N3)
+  router.get("/audit", async (req, res) => {
+    const rawLimit = Number(req.query.limit ?? 50);
+    const limit = Number.isInteger(rawLimit) && rawLimit >= 1 ? rawLimit : 50;
+    const entries = await ctx.hub.auditEntries({
+      limit,
+      skill_id: req.query.skill_id !== undefined ? String(req.query.skill_id) : undefined,
+      status: req.query.status !== undefined ? String(req.query.status) : undefined,
+      client: req.query.client !== undefined ? String(req.query.client) : undefined,
+    });
+    res.json({ entries });
   });
 
   return router;

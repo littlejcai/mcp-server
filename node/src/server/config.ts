@@ -18,6 +18,8 @@ export interface HubConfig {
   workspaceRoot: string;
   globalConcurrency: number;
   jobStore: JobStoreConfig;
+  /** undefined = authorization off (everything allowed, legacy behavior). */
+  authorization?: Record<string, any>;
 }
 
 export function loadConfig(configPath: string): HubConfig {
@@ -53,5 +55,6 @@ export function loadConfig(configPath: string): HubConfig {
           String(config.job_store?.path ?? "./logs/jobs.db"),
       ),
     },
+    authorization: config.authorization,
   };
 }

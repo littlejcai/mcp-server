@@ -1,11 +1,12 @@
-# skill-hub Node 版（N2 · 地基）测试报告
+# skill-hub Node 版（N3 · 信任与隔离）测试报告
 
-- 日期：2026-09-17（N2 修订：server/api/core 分层 + REST + SQLite + CLI 落地后更新）
-- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0–N2）
-- 结论：**87/87 自动化测试通过（全真进程：真实子进程、真实超时杀树、真实 HTTP）；
-  实弹冒烟 12/12（含 first-class 直调）；REST API 实弹（skills/run/async/404/401）全符合；
+- 日期：2026-09-17（N3 修订：授权 + 上传校验 + 审计查询 + 驱动接口落地后更新）
+- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0–N3）
+- 结论：**126/126 自动化测试通过（全真进程：真实子进程、真实超时杀树、真实 HTTP）；
+  实弹冒烟 12/12（含 first-class 直调）；REST API 实弹（skills/run/async/404/401）
+  全符合；N3 新端点实弹（validate 200/422、audit 查询、授权 403/200）全符合；
   CLI 实弹（list/describe/run/jobs/job）全符合；SQLite 作业重启持久化实测通过；
-  strict TS 零错误**
+  strict TS 零错误；授权关闭时 smoke 12/12 零回归**
 
 ## 1. 测试环境
 
@@ -20,21 +21,25 @@
 | 被调技能运行时 | node（fixture 技能与真实 md-stats/note-worthiness 技能脚本） |
 | 运行器 | node:test（vitest 因本机环境病理性停滞被替换，见 §5） |
 
-## 2. 自动化测试（87/87 通过，19 个套件）
+## 2. 自动化测试（126/126 通过，27 个套件）
 
 | 测试文件 | 覆盖模块 | 用例 | 结果 |
 | --- | --- | --- | --- |
 | agent.test.ts（N1 新增） | agent_runner.ts（真 fake-claude 进程） | 9 | 全过 |
 | app.test.ts | server/app.ts（HTTP 层 + MCP 工具面 + first-class） | 9 | 全过 |
+| audit.test.ts（N3 新增） | audit.ts 查询面（新→旧、过滤、limit 夹取、坏行容错） | 5 | 全过 |
+| authorization.test.ts（N3 新增） | authorization.ts（策略解析 + grant 白名单 + 风险上限 + Hub 集成拒绝/放行/回归） | 11 | 全过 |
 | cli.test.ts（N2 新增） | cli.ts（spawn 真实 CLI：list/describe/run/jobs/job） | 5 | 全过 |
+| driver.test.ts（N3 新增） | driver.ts（ProcessDriver：成功/退出码/超时杀树/ENOENT/stdout 上限/stdin 送达） | 6 | 全过 |
 | envelope.test.ts | envelope.ts（含 v 版本戳） | 10 | 全过 |
 | first_class.test.ts（N1 新增） | first_class.ts（JSON Schema→zod） | 3 | 全过 |
 | hub.test.ts | hub.ts（执行核） | 3 | 全过 |
 | job.test.ts（N0.5 新增） | jobs.ts + hub.submit（异步作业） | 6 | 全过 |
 | registry.test.ts | registry.ts | 9 | 全过 |
-| rest.test.ts（N2 新增） | api/rest.ts（REST 契约：鉴权/目录/运行/404/400/作业） | 8 | 全过 |
-| runner.test.ts | runner.ts（真实子进程） | 10 | 全过 |
+| rest.test.ts（N2 新增，N3 扩） | api/rest.ts（REST 契约 + validate 200/422 + audit 端点 + 授权 403） | 15 | 全过 |
+| runner.test.ts | runner.ts（真实子进程，N3 起经 ExecutionDriver） | 10 | 全过 |
 | security.test.ts | security.ts | 11 | 全过 |
+| skill_validate.test.ts（N3 新增） | skill_validate.ts（frontmatter 校验：合法/缺失/非法 id/坏 YAML/多错误） | 10 | 全过 |
 | sqlite_jobs.test.ts（N2 新增） | sqlite_jobs.ts（生命周期/重启持久化/容量淘汰/失败回读） | 4 | 全过 |
 
 ### 关键用例与 Python 版的对应（契约保真验证）
@@ -186,9 +191,27 @@ Node 版即可成为唯一实现，Python 版保留一个版本期退役。
 ```bash
 cd node
 npm install
-npm test          # 编译 + 87 用例（node:test）
+npm test          # 编译 + 126 用例（node:test）
 npm start         # 启动服务（读仓库根 config.yaml / registry.yaml，默认 sqlite 作业存储）
 npm run smoke -- http://127.0.0.1:8800 <token>   # 端到端实弹（需服务已启动）
 npm run cli -- list     # skillhub CLI 本机直连
 npm run typecheck # strict TS 检查
 ```
+
+## 9. N3 实弹验证记录（2026-09-17）
+
+- **授权关闭（默认 config.yaml）零回归**：`npm run smoke` 12/12 SMOKE PASSED
+  —— run_skill 同步、first-class 直调、async→get_job、list_jobs、未知技能
+  工具错误、路径逃逸工具错误全部照旧；
+- **上传校验端点**：`POST /api/skills/validate` 合法 SKILL.md → 200
+  `{valid:true, name, description}`；无 frontmatter → **422** + 错误明细，
+  全程不落盘（skills/ 目录无新增）；
+- **审计查询端点**：`GET /api/audit` 返回真实 `logs/audit.jsonl` 记录
+  （新→旧），`?skill_id=&client=&limit=` 过滤实测生效；
+- **授权开启实弹**：临时在 config.yaml 启用 `authorization`（default
+  deny + 仅 `rest` 授 `md-stats`）→ 未授权技能
+  `note-worthiness` 返回 **403** `Client "rest" is not granted skill ...`、
+  已授权 `md-stats` 返回 200 success；随后恢复默认 config 并重启确认；
+- **CLI 直连**：授权关闭下 `skillhub run/list` 正常（授权开启后 CLI 以
+  `cli` 为 client 同样受 grant 约束，管理员需在 `authorization.clients`
+  显式授予）。
