@@ -6,12 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from "./expect.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import { AuditLog } from "../src/audit.js";
-import { buildApp } from "../src/app.js";
-import { Hub } from "../src/hub.js";
-import { JobStore } from "../src/jobs.js";
-import { ScriptRunner } from "../src/runner.js";
-import { Semaphore } from "../src/semaphore.js";
+import { AuditLog } from "../src/core/audit.js";
+import { buildApp } from "../src/server/app.js";
+import { Hub } from "../src/core/hub.js";
+import { MemoryJobStore } from "../src/core/jobs.js";
+import { ScriptRunner } from "../src/core/runner.js";
+import { Semaphore } from "../src/core/semaphore.js";
 import { buildFixture, type Fixture } from "./helpers.js";
 
 const TOKEN = "test-token-123";
@@ -27,7 +27,7 @@ beforeAll(async () => {
     new ScriptRunner(fixture.registry, fixture.workspaceRoot),
     new AuditLog(path.join(fixture.workspaceRoot, "logs")),
     new Semaphore(1),
-    new JobStore(),
+    new MemoryJobStore(),
   );
   const app = buildApp({ registry: fixture.registry, hub, token: TOKEN });
   await new Promise<void>((resolve) => {

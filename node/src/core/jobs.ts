@@ -1,5 +1,7 @@
-/** In-memory job store for async skill execution (the N2 SQLite JobStore will
- * implement the same record shape). Jobs are ephemeral: restarts lose them. */
+/** Job store contract for async skill execution, plus the in-memory
+ * implementation (N0.5 era default). The N2 SQLite store
+ * (./sqlite_jobs.ts) implements the same interface with a different
+ * persistence backend — clients of Hub only ever see JobRecord. */
 
 import { errorEnvelope, type Envelope } from "./envelope.js";
 
@@ -21,13 +23,51 @@ export interface JobRecord {
   error: string | null;
 }
 
-const TERMINAL: readonly JobStatus[] = ["succeeded", "failed"];
+export const TERMINAL: readonly JobStatus[] = ["succeeded", "failed"];
 
-function nowIso(): string {
+export function nowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-export class JobStore {
+export function newJobId(): string {
+  return `job_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+export function makeJob(
+  jobId: string,
+  skillId: string,
+  dryRun: boolean,
+  client: string,
+): JobRecord {
+  return {
+    job_id: jobId,
+    skill_id: skillId,
+    status: "queued",
+    dry_run: dryRun,
+    client,
+    submitted_at: nowIso(),
+    started_at: null,
+    finished_at: null,
+    duration_ms: null,
+    envelope: null,
+    error: null,
+  };
+}
+
+export interface JobStore {
+  create(skillId: string, dryRun: boolean, client: string): JobRecord;
+  get(jobId: string): JobRecord | undefined;
+  /** Newest first, capped at `limit`. */
+  list(limit: number): JobRecord[];
+  markRunning(jobId: string): void;
+  complete(jobId: string, envelope: Envelope): void;
+  fail(jobId: string, message: string): void;
+  /** Release backend resources (SQLite handle, …). Optional. */
+  close?(): void;
+}
+
+/** In-memory implementation: jobs are ephemeral, restarts lose them. */
+export class MemoryJobStore implements JobStore {
   private jobs = new Map<string, JobRecord>();
 
   constructor(readonly capacity = 200) {}
@@ -49,19 +89,7 @@ export class JobStore {
       if (evictKey === undefined) break;
       this.jobs.delete(evictKey);
     }
-    const job: JobRecord = {
-      job_id: `job_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
-      skill_id: skillId,
-      status: "queued",
-      dry_run: dryRun,
-      client,
-      submitted_at: nowIso(),
-      started_at: null,
-      finished_at: null,
-      duration_ms: null,
-      envelope: null,
-      error: null,
-    };
+    const job = makeJob(newJobId(), skillId, dryRun, client);
     this.jobs.set(job.job_id, job);
     return job;
   }
@@ -70,7 +98,6 @@ export class JobStore {
     return this.jobs.get(jobId);
   }
 
-  /** Newest first, capped at `limit`. */
   list(limit: number): JobRecord[] {
     return [...this.jobs.values()].slice(-limit).reverse();
   }

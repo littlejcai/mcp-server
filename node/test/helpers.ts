@@ -6,8 +6,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { findRepoRoot } from "../src/paths.js";
-import { SkillRegistry } from "../src/registry.js";
+import { findRepoRoot } from "../src/server/paths.js";
+import { SkillRegistry } from "../src/core/registry.js";
 
 export const REPO_ROOT = findRepoRoot(
   path.dirname(fileURLToPath(import.meta.url)),

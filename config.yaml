@@ -7,3 +7,7 @@ workspace_root: ./workspace
 
 limits:
   global_concurrency: 1   # one skill process at a time; raise later if needed
+
+job_store:
+  type: sqlite            # memory | sqlite — sqlite persists async jobs to disk
+  path: ./logs/jobs.db    # sqlite 时生效（logs/ 已被 gitignore，重启不丢作业）

@@ -7,11 +7,17 @@ import * as path from "node:path";
 
 import { load as loadYaml } from "js-yaml";
 
+export interface JobStoreConfig {
+  type: "memory" | "sqlite";
+  path: string;
+}
+
 export interface HubConfig {
   server: { host: string; port: number };
   registry: string;
   workspaceRoot: string;
   globalConcurrency: number;
+  jobStore: JobStoreConfig;
 }
 
 export function loadConfig(configPath: string): HubConfig {
@@ -22,6 +28,7 @@ export function loadConfig(configPath: string): HubConfig {
   const base = path.dirname(path.resolve(configPath));
   const env = (v: string | undefined): string | undefined =>
     v && v.trim() ? v.trim() : undefined;
+  const jobStoreType = String(config.job_store?.type ?? "sqlite");
   return {
     server: {
       host: String(config.server?.host ?? "0.0.0.0"),
@@ -38,5 +45,13 @@ export function loadConfig(configPath: string): HubConfig {
         String(config.workspace_root ?? "./workspace"),
     ),
     globalConcurrency: Number(config.limits?.global_concurrency ?? 1),
+    jobStore: {
+      type: jobStoreType === "memory" ? "memory" : "sqlite",
+      path: path.resolve(
+        base,
+        env(process.env.HUB_JOB_STORE_PATH) ??
+          String(config.job_store?.path ?? "./logs/jobs.db"),
+      ),
+    },
   };
 }

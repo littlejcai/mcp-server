@@ -1,10 +1,10 @@
-# skill-hub Node 版（N0 MVP）测试报告
+# skill-hub Node 版（N2 · 地基）测试报告
 
-- 日期：2026-09-16（N1 修订：AgentRunner + first-class 落地后更新）
-- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0–N1）
-- 结论：**70/70 自动化测试通过（全真进程：真实子进程、真实超时杀树、真实 HTTP）；
-  实弹冒烟 12/12（含 first-class 直调）；真实 Agent 技能（note-worthiness，
-  内层真 Claude Code）端到端通过（42s，四维评分完整返回）；
+- 日期：2026-09-17（N2 修订：server/api/core 分层 + REST + SQLite + CLI 落地后更新）
+- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0–N2）
+- 结论：**87/87 自动化测试通过（全真进程：真实子进程、真实超时杀树、真实 HTTP）；
+  实弹冒烟 12/12（含 first-class 直调）；REST API 实弹（skills/run/async/404/401）全符合；
+  CLI 实弹（list/describe/run/jobs/job）全符合；SQLite 作业重启持久化实测通过；
   strict TS 零错误**
 
 ## 1. 测试环境
@@ -12,26 +12,30 @@
 | 项 | 值 |
 | --- | --- |
 | 操作系统 | macOS 12.7.6 x64（负载常驻 60+ 的重度使用机器） |
-| Node | v24.16.0（ESM，`tsc` 编译后纯 `node` 运行） |
-| TypeScript | 5.9.3（strict，`--noEmit` 类型检查零错误） |
-| @modelcontextprotocol/sdk | 1.30.0（服务端 Streamable HTTP + 客户端冒烟均为该 SDK） |
-| express / ajv / zod / js-yaml | 4.22.3 / 8.20.0 / 3.25.76 / 4.3.2 |
-| 被调技能运行时 | python3（真实 md-stats 技能脚本）；Node fixture 技能 |
+| Node | v22.23.2（ESM，`tsc` 编译后纯 `node` 运行） |
+| TypeScript | 5.9.x（strict，`--noEmit` 类型检查零错误） |
+| @modelcontextprotocol/sdk | ^1.18.0（服务端 Streamable HTTP + 客户端冒烟均为该 SDK） |
+| express / ajv / zod / js-yaml | 4.21+ / 8.17+ / 3.24+ / 4.1+ |
+| node:sqlite | Node 内置（实验性，入口已抑制警告；N2 起默认作业存储） |
+| 被调技能运行时 | node（fixture 技能与真实 md-stats/note-worthiness 技能脚本） |
 | 运行器 | node:test（vitest 因本机环境病理性停滞被替换，见 §5） |
 
-## 2. 自动化测试（70/70 通过，16 个套件）
+## 2. 自动化测试（87/87 通过，19 个套件）
 
 | 测试文件 | 覆盖模块 | 用例 | 结果 |
 | --- | --- | --- | --- |
 | agent.test.ts（N1 新增） | agent_runner.ts（真 fake-claude 进程） | 9 | 全过 |
-| app.test.ts | app.ts（HTTP 层 + MCP 工具面 + first-class） | 9 | 全过 |
+| app.test.ts | server/app.ts（HTTP 层 + MCP 工具面 + first-class） | 9 | 全过 |
+| cli.test.ts（N2 新增） | cli.ts（spawn 真实 CLI：list/describe/run/jobs/job） | 5 | 全过 |
 | envelope.test.ts | envelope.ts（含 v 版本戳） | 10 | 全过 |
 | first_class.test.ts（N1 新增） | first_class.ts（JSON Schema→zod） | 3 | 全过 |
 | hub.test.ts | hub.ts（执行核） | 3 | 全过 |
 | job.test.ts（N0.5 新增） | jobs.ts + hub.submit（异步作业） | 6 | 全过 |
 | registry.test.ts | registry.ts | 9 | 全过 |
+| rest.test.ts（N2 新增） | api/rest.ts（REST 契约：鉴权/目录/运行/404/400/作业） | 8 | 全过 |
 | runner.test.ts | runner.ts（真实子进程） | 10 | 全过 |
 | security.test.ts | security.ts | 11 | 全过 |
+| sqlite_jobs.test.ts（N2 新增） | sqlite_jobs.ts（生命周期/重启持久化/容量淘汰/失败回读） | 4 | 全过 |
 
 ### 关键用例与 Python 版的对应（契约保真验证）
 
@@ -164,13 +168,27 @@ Node 先行工具（get_job/list_jobs）符合预期、list_skills 一致、
 describe_skill(md-stats) 一致、run_skill(md-stats) envelope 逐字段一致。
 Node 版即可成为唯一实现，Python 版保留一个版本期退役。
 
+**N2 验收（Gate-NT2）实测记录**：
+- **分层定型**：src/ 物理拆为 `core/`（执行核）+ `api/`（MCP/REST 出口）+
+  `server/`（装配），全量 70 例重构零回归；
+- **REST 与 MCP 同契约**：实弹验证——`/api/skills` 目录、
+  `/api/skills/:id/run` 同步 envelope（v:1 / status / data.words 一致）、
+  `run_mode: async` 202 + `/api/jobs/:id` 轮询解析、未知技能 404、
+  输入违规/路径逃逸 400、无 token 401；
+- **JobStore 可换实现**：`JobStore` 接口 + `MemoryJobStore`/`SqliteJobStore`
+  双实现；重启服务后 SQLite 中既有作业（MCP 与 REST 提交各一条）完整保留，
+  且 CLI 经同一 db 可见——持久化共享验证通过；
+- **CLI**：`skillhub list/describe/run/jobs/job` 实弹全部正常，
+  stderr 无噪声（SQLite 实验性警告已在入口抑制）。
+
 复测命令：
 
 ```bash
 cd node
 npm install
-npm test          # 编译 + 50 用例（node:test）
-npm start         # 启动服务（读仓库根 config.yaml / registry.yaml）
+npm test          # 编译 + 87 用例（node:test）
+npm start         # 启动服务（读仓库根 config.yaml / registry.yaml，默认 sqlite 作业存储）
 npm run smoke -- http://127.0.0.1:8800 <token>   # 端到端实弹（需服务已启动）
+npm run cli -- list     # skillhub CLI 本机直连
 npm run typecheck # strict TS 检查
 ```

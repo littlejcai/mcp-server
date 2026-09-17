@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "./expect.js";
 
-import { PathGuard, buildEnv, scrub } from "../src/security.js";
+import { PathGuard, buildEnv, scrub } from "../src/core/security.js";
 
 function tmpWorkspace(): string {
   const root = mkdtempSync(path.join(os.tmpdir(), "pathguard-"));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "./expect.js";
 
-import { ENVELOPE_VERSION, buildRequest, errorEnvelope, parseEnvelope } from "../src/envelope.js";
+import { ENVELOPE_VERSION, buildRequest, errorEnvelope, parseEnvelope } from "../src/core/envelope.js";
 
 describe("parseEnvelope", () => {
   it("parses a plain JSON envelope and normalizes fields", () => {

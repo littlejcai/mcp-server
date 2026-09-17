@@ -3,11 +3,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "./expect.js";
 
-import { AuditLog } from "../src/audit.js";
-import { Hub } from "../src/hub.js";
-import { JobStore } from "../src/jobs.js";
-import { ScriptRunner } from "../src/runner.js";
-import { Semaphore } from "../src/semaphore.js";
+import { AuditLog } from "../src/core/audit.js";
+import { Hub } from "../src/core/hub.js";
+import { MemoryJobStore } from "../src/core/jobs.js";
+import { ScriptRunner } from "../src/core/runner.js";
+import { Semaphore } from "../src/core/semaphore.js";
 import { buildFixture, type Fixture } from "./helpers.js";
 
 function tmpDir(prefix: string): string {
@@ -20,7 +20,7 @@ function makeHub(fixture: Fixture, runner: ScriptRunner, limit = 1): Hub {
     runner,
     new AuditLog(tmpDir("hub-audit-")),
     new Semaphore(limit),
-    new JobStore(),
+    new MemoryJobStore(),
   );
 }
 
@@ -57,7 +57,7 @@ describe("Hub", () => {
       new ScriptRunner(fixture.registry, fixture.workspaceRoot),
       new AuditLog(auditDir),
       new Semaphore(1),
-      new JobStore(),
+      new MemoryJobStore(),
     );
     await hub.execute("md-stats-js", { source_path: "inbox/a.md" }, true, "audit-test");
     await hub.execute("nope", {}).catch(() => {});
@@ -83,7 +83,7 @@ describe("Hub", () => {
       new ScriptRunner(fixture.registry, fixture.workspaceRoot),
       new AuditLog(auditDir),
       new Semaphore(1),
-      new JobStore(),
+      new MemoryJobStore(),
     );
     await hub.execute("md-stats-js", {}).catch(() => {});
     await new Promise((r) => setTimeout(r, 100));

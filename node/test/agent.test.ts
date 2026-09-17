@@ -2,9 +2,9 @@ import { readdirSync } from "node:fs";
 import * as path from "node:path";
 import { beforeEach, describe, expect, it } from "./expect.js";
 
-import { AgentRunner } from "../src/agent_runner.js";
-import { SkillExecutionError, SkillInputError } from "../src/errors.js";
-import { ScriptRunner } from "../src/runner.js";
+import { AgentRunner } from "../src/core/agent_runner.js";
+import { SkillExecutionError, SkillInputError } from "../src/core/errors.js";
+import { ScriptRunner } from "../src/core/runner.js";
 import { buildFixture, type Fixture } from "./helpers.js";
 
 let fixture: Fixture;

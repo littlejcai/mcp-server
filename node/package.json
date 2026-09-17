@@ -9,12 +9,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:watch": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
-    "start": "npm run build && node dist/src/main.js",
-    "dev": "node --watch dist/src/main.js",
+    "start": "npm run build && node dist/src/server/main.js",
+    "dev": "node --watch dist/src/server/main.js",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
     "smoke": "node dist/scripts/smoke.js",
-    "parity": "node dist/scripts/parity-check.js"
+    "parity": "node dist/scripts/parity-check.js",
+    "cli": "node dist/src/cli.js"
+  },
+  "bin": {
+    "skillhub": "./dist/src/cli.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.0",

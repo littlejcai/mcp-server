@@ -1,4 +1,4 @@
-# skill-hub Node 版使用说明（N1）
+# skill-hub Node 版使用说明（N2）
 
 > 与根目录 Python 版**契约完全一致**的 Node.js/TypeScript 服务端：
 > 同一份 `registry.yaml`、同一份 `config.yaml`、同一批技能、同一份审计日志。
@@ -7,7 +7,7 @@
 
 ---
 
-## 一、当前能力边界（N0 + N0.5 + N1）
+## 一、当前能力边界（N0 + N0.5 + N1 + N2）
 
 | 能力 | 状态 |
 | --- | --- |
@@ -19,51 +19,71 @@
 | Streamable HTTP + Bearer 认证 + `/health` | ✅ 可用 |
 | 全局并发限制、超时杀进程树、路径围栏、环境白名单、审计 | ✅ 可用 |
 | envelope 带内契约版本号 `v: 1` | ✅ 可用（两端同步） |
-| JobStore SQLite 持久化 / REST / UI | ⏳ N2–N4 |
+| **server/api/core 分层定型** | ✅ 可用（N2） |
+| **REST API 出口**（`/api/skills` · `/api/jobs`，与 MCP 同契约） | ✅ 可用（N2） |
+| **JobStore SQLite 持久化**（默认 sqlite，内存实现可换） | ✅ 可用（N2） |
+| **skillhub CLI**（list/describe/run/jobs/job） | ✅ 可用（N2） |
+| Web UI | ⏳ N4 |
 
-## 二、架构（Node 版）
+## 二、架构（Node 版，N2 起三层定型）
 
 ```
- 外部客户端（MCP over HTTP + Bearer）
+ 外部客户端（MCP over HTTP + Bearer · REST over HTTP + Bearer）
         │
         ▼
-┌──────────────────────────────────────────────────┐
-│ node/dist/src/main.js — 接入层（Express）          │
-│  Bearer 中间件 · /health · /mcp (Streamable HTTP) │
-│  无状态模式：每请求独立 McpServer + transport      │
-└───────────────┬──────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ node/src/server/ — 装配层（Express）                    │
+│  app.ts   Bearer 中间件 · /health · /mcp · /api        │
+│  main.ts  入口：读 config.yaml + 装配 Hub + 监听        │
+│  无状态 MCP：每请求独立 McpServer + transport           │
+└───────────────┬──────────────────────────────────────┘
                 ▼
-┌──────────────────────────────────────────────────┐
-│ node/src/ — 核心层（与 Python 版逐模块对应）        │
-│  registry.ts → registry.yaml（共用，唯一事实源）    │
-│  security.ts  路径围栏 · 环境白名单 · 脱敏          │
-│  runner.ts    脚本型执行器（spawn/超时杀树/上限）    │
-│  envelope.ts  请求/响应契约（与 Python 逐字段一致）  │
-│  audit.ts     JSONL 审计（共用 logs/audit.jsonl）  │
-└───────────────┬──────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ node/src/api/ — 出口层（同一执行核的两个客户端）         │
+│  mcp.ts    MCP 工具注册（5 调度工具 + first-class）      │
+│  rest.ts   REST 路由（/api/skills · /api/jobs）         │
+└───────────────┬──────────────────────────────────────┘
                 ▼
-   skills/（共用） · workspace/（共用）
+┌──────────────────────────────────────────────────────┐
+│ node/src/core/ — 执行核（与传输无关，与 Python 逐模块对应）│
+│  hub.ts       校验→信号量→执行→审计                     │
+│  registry.ts → registry.yaml（共用，唯一事实源）         │
+│  security.ts  路径围栏 · 环境白名单 · 脱敏               │
+│  runner.ts / agent_runner.ts  脚本型 / Agent 执行器     │
+│  envelope.ts  请求/响应契约（与 Python 逐字段一致）       │
+│  audit.ts     JSONL 审计（共用 logs/audit.jsonl）       │
+│  jobs.ts      JobStore 接口 + 内存实现                  │
+│  sqlite_jobs.ts  SQLite 持久化实现（N2 默认）            │
+└───────────────┬──────────────────────────────────────┘
+                ▼
+   skills/（共用） · workspace/（共用） · logs/jobs.db（作业持久化）
 ```
 
 | 模块 | 职责 | 对应 Python |
 | --- | --- | --- |
-| `src/main.ts` | 入口：装配 + 监听 | `server.py __main__` |
-| `src/app.ts` | HTTP 层：Bearer、/health、/mcp、工具注册 | `server.py` |
-| `src/hub.ts` | 执行核：校验→信号量→执行→审计 | `server._execute` |
-| `src/runner.ts` | 脚本型执行器 | `hub/runner.py` |
-| `src/registry.ts` | registry 加载 + meta-schema + 输入校验 | `hub/registry.py` |
-| `src/security.ts` | PathGuard / buildEnv / scrub | `hub/security.py` |
-| `src/envelope.ts` | 请求/响应 envelope | `hub/envelope.py` |
-| `src/audit.ts` | JSONL 审计 | `hub/audit.py` |
-| `src/config.ts` | config.yaml 加载 + env 覆盖 | （内联于 server.py） |
+| `server/main.ts` | 入口：装配 + 监听 | `server.py __main__` |
+| `server/app.ts` | 装配：Bearer、/health、/mcp、/api | `server.py` |
+| `api/mcp.ts` | MCP 工具注册（含 first-class） | `server.py` 工具面 |
+| `api/rest.ts` | REST 路由（N2 新增，UI 消费用） | — |
+| `core/hub.ts` | 执行核：校验→信号量→执行→审计 | `server._execute` |
+| `core/runner.ts` | 脚本型执行器 | `hub/runner.py` |
+| `core/agent_runner.ts` | Agent 型执行器（claude -p） | `hub/agent_runner.py` |
+| `core/registry.ts` | registry 加载 + meta-schema + 输入校验 | `hub/registry.py` |
+| `core/security.ts` | PathGuard / buildEnv / scrub | `hub/security.py` |
+| `core/envelope.ts` | 请求/响应 envelope | `hub/envelope.py` |
+| `core/audit.ts` | JSONL 审计 | `hub/audit.py` |
+| `core/jobs.ts` / `core/sqlite_jobs.ts` | 作业存储：接口 + 内存 / SQLite（N2） | `hub/jobs.py` |
+| `server/config.ts` | config.yaml 加载 + env 覆盖 | （内联于 server.py） |
+| `cli.ts` | skillhub CLI（N2 新增，本机直连执行核） | — |
 
 ## 三、快速上手
 
 ```bash
 cd node
 npm install
-npm test                          # 编译到 dist/ + 50 用例（node:test）
+npm test                          # 编译到 dist/ + 87 用例（node:test）
 npm start                         # 编译并启动，默认读仓库根 config.yaml
+npm run cli -- list               # skillhub CLI 本机直连
 ```
 
 启动输出：

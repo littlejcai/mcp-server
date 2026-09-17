@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "./expect.js";
 
-import { SkillRegistry } from "../src/registry.js";
+import { SkillRegistry } from "../src/core/registry.js";
 import { REPO_ROOT } from "./helpers.js";
 
 const realRegistry = () =>

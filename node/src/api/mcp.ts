@@ -1,84 +1,34 @@
-/** HTTP layer: /health + bearer middleware + stateless MCP at /mcp
- * (port of server.py's Starlette app, Express edition). */
-
-import { timingSafeEqual } from "node:crypto";
+/** MCP API surface: the /mcp tool registration over the shared execution core.
+ * Every tool delegates to the same Hub that the REST surface uses — the two
+ * entry points are interchangeable clients of one execution kernel. */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import express, { type NextFunction, type Request, type Response } from "express";
 
-import {
-  errorResult,
-  jsonResult,
-  registerFirstClassTools,
-} from "./first_class.js";
-import type { Hub } from "./hub.js";
-import type { SkillRegistry } from "./registry.js";
+import { buildToolShape, splitToolArgs } from "../core/first_class.js";
+import type { Hub } from "../core/hub.js";
+import type { SkillRegistry } from "../core/registry.js";
 
-export interface HubContext {
+export interface McpContext {
   registry: SkillRegistry;
   hub: Hub;
-  token: string;
 }
 
-export function buildApp(ctx: HubContext): express.Express {
-  const app = express();
-  app.disable("x-powered-by");
-
-  // registered before the middleware: /health is the only unauthenticated route
-  app.get("/health", (_req: Request, res: Response) => {
-    res.json({ ok: true, skills: ctx.registry.skills.size });
-  });
-
-  // Pure bearer check for every route below (mirror of BearerTokenMiddleware).
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const provided = req.headers.authorization ?? "";
-    const expected = `Bearer ${ctx.token}`;
-    const a = Buffer.from(provided, "utf8");
-    const b = Buffer.from(expected, "utf8");
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      res.status(401).json({ error: "unauthorized" });
-      return;
-    }
-    next();
-  });
-
-  app.use(express.json({ limit: "2mb" }));
-
-  app.post("/mcp", async (req: Request, res: Response) => {
-    // Stateless mode: fresh server+transport per request, nothing session-shaped
-    // to leak between callers. GET SSE streams are a planned N2 addition.
-    const server = createMcpServer(ctx);
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    res.on("close", () => {
-      void transport.close();
-      void server.close();
-    });
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } catch (err) {
-      if (!res.headersSent) {
-        res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-      }
-    }
-  });
-
-  const methodNotAllowed = (_req: Request, res: Response) => {
-    res.status(405).json({ error: "Method not allowed (stateless MCP: POST only)" });
-  };
-  app.get("/mcp", methodNotAllowed);
-  app.delete("/mcp", methodNotAllowed);
-
-  return app;
+export function jsonResult(data: unknown): CallToolResult {
+  return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
-function createMcpServer(ctx: HubContext): McpServer {
-  const server = new McpServer({ name: "skill-hub", version: "0.1.0" });
+export function errorResult(err: unknown): CallToolResult {
+  const message = err instanceof Error ? err.message : String(err);
+  return { content: [{ type: "text", text: message }], isError: true };
+}
 
+/** Register the five dispatcher tools on an MCP server. */
+export function registerMcpTools(
+  server: McpServer,
+  ctx: McpContext,
+): void {
   server.registerTool(
     "list_skills",
     {
@@ -170,8 +120,51 @@ function createMcpServer(ctx: HubContext): McpServer {
       }
     },
   );
+}
 
-  registerFirstClassTools(server, ctx.hub, ctx.registry);
-
-  return server;
+/** One dedicated first-class tool per registry skill marked first_class: true.
+ * Tool name = skill_id with "-" replaced by "_"; the handler delegates to the
+ * same execution core as run_skill, tagged client "first-class:<name>".
+ * Registration is guarded per skill: a malformed entry skips that tool instead
+ * of killing the whole surface. */
+export function registerFirstClassTools(
+  server: McpServer,
+  hub: Hub,
+  registry: SkillRegistry,
+): void {
+  for (const skillId of registry.firstClassIds()) {
+    try {
+      const config = registry.get(skillId);
+      const toolName = skillId.replace(/-/g, "_");
+      const shape = buildToolShape(config.input_schema);
+      server.registerTool(
+        toolName,
+        {
+          description:
+            `${String(config.description)} ` +
+            `(risk: ${String(config.risk_level ?? "unknown")}; dry_run defaults to true)`,
+          inputSchema: { ...shape, dry_run: z.boolean().default(true) },
+        },
+        async (args: Record<string, unknown>) => {
+          try {
+            const { inputs, dryRun } = splitToolArgs(args);
+            return jsonResult(
+              await hub.execute(
+                skillId,
+                inputs,
+                dryRun,
+                `first-class:${toolName}`,
+              ),
+            );
+          } catch (err) {
+            return errorResult(err);
+          }
+        },
+      );
+    } catch (err) {
+      console.error(
+        `[skill-hub] first-class tool registration failed for ${skillId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 }

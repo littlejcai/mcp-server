@@ -1,14 +1,14 @@
 import { describe, expect, it } from "./expect.js";
 import * as path from "node:path";
 
-import { UnknownJobError } from "../src/errors.js";
-import { JobStore, type JobRecord } from "../src/jobs.js";
-import { Hub } from "../src/hub.js";
-import { AuditLog } from "../src/audit.js";
+import { UnknownJobError } from "../src/core/errors.js";
+import { MemoryJobStore, type JobRecord } from "../src/core/jobs.js";
+import { Hub } from "../src/core/hub.js";
+import { AuditLog } from "../src/core/audit.js";
 import { mkdtempSync } from "node:fs";
 import * as os from "node:os";
-import { ScriptRunner } from "../src/runner.js";
-import { Semaphore } from "../src/semaphore.js";
+import { ScriptRunner } from "../src/core/runner.js";
+import { Semaphore } from "../src/core/semaphore.js";
 import { buildFixture, type Fixture } from "./helpers.js";
 
 function sleep(ms: number): Promise<void> {
@@ -93,7 +93,7 @@ describe("async jobs (run_mode=async)", () => {
   });
 
   it("evicts the oldest finished job beyond capacity", () => {
-    const store = new JobStore(2);
+    const store = new MemoryJobStore(2);
     const first = store.create("a", true, "");
     store.complete(first.job_id, {
       v: 1,
@@ -124,6 +124,6 @@ function makeHub(fixture: Fixture, runner?: ScriptRunner): Hub {
     runner ?? new ScriptRunner(fixture.registry, fixture.workspaceRoot),
     new AuditLog(mkdtempSync(path.join(os.tmpdir(), "job-audit-"))),
     new Semaphore(1),
-    new JobStore(),
+    new MemoryJobStore(),
   );
 }

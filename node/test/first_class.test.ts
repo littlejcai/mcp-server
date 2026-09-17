@@ -2,8 +2,8 @@ import * as path from "node:path";
 import { describe, expect, it } from "./expect.js";
 import { z } from "zod";
 
-import { buildToolShape } from "../src/first_class.js";
-import { SkillRegistry } from "../src/registry.js";
+import { buildToolShape } from "../src/core/first_class.js";
+import { SkillRegistry } from "../src/core/registry.js";
 import { REPO_ROOT } from "./helpers.js";
 
 describe("buildToolShape", () => {
