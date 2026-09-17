@@ -5,10 +5,14 @@ import { timingSafeEqual } from "node:crypto";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
+import express, { type NextFunction, type Request, type Response } from "express";
 
+import {
+  errorResult,
+  jsonResult,
+  registerFirstClassTools,
+} from "./first_class.js";
 import type { Hub } from "./hub.js";
 import type { SkillRegistry } from "./registry.js";
 
@@ -167,14 +171,7 @@ function createMcpServer(ctx: HubContext): McpServer {
     },
   );
 
+  registerFirstClassTools(server, ctx.hub, ctx.registry);
+
   return server;
-}
-
-function jsonResult(data: unknown): CallToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(data) }] };
-}
-
-function errorResult(err: unknown): CallToolResult {
-  const message = err instanceof Error ? err.message : String(err);
-  return { content: [{ type: "text", text: message }], isError: true };
 }

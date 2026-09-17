@@ -65,15 +65,15 @@ async function main(): Promise<void> {
     const onlyB = namesB.filter((n) => !namesA.includes(n));
     const commonKey = JSON.stringify(common);
     const expectedCommon = JSON.stringify(
-      ["describe_skill", "list_skills", "run_skill"].sort(),
+      ["describe_skill", "list_skills", "md_stats", "note_worthiness", "run_skill"].sort(),
     );
-    const expectedOnlyA = JSON.stringify(["get_job", "list_jobs"]);
+    const expectedOnlyB = JSON.stringify(["get_job", "list_jobs"]);
     const surfaceOk =
       commonKey === expectedCommon &&
-      JSON.stringify(onlyA) === expectedOnlyA &&
-      onlyB.length === 0;
+      onlyA.length === 0 &&
+      JSON.stringify(onlyB) === expectedOnlyB;
     if (surfaceOk) {
-      console.log(`  ok  tools/list (common: ${common.join(", ")}; Node-first: ${onlyA.join(", ")})`);
+      console.log(`  ok  tools/list (common: ${common.join(", ")}; Node-first: ${onlyB.join(", ")})`);
     } else {
       failures++;
       console.error(

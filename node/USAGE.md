@@ -1,4 +1,4 @@
-# skill-hub Node 版使用说明（N0.5）
+# skill-hub Node 版使用说明（N1）
 
 > 与根目录 Python 版**契约完全一致**的 Node.js/TypeScript 服务端：
 > 同一份 `registry.yaml`、同一份 `config.yaml`、同一批技能、同一份审计日志。
@@ -7,18 +7,18 @@
 
 ---
 
-## 一、当前能力边界（N0 + N0.5）
+## 一、当前能力边界（N0 + N0.5 + N1）
 
 | 能力 | 状态 |
 | --- | --- |
 | `list_skills` / `describe_skill` / `run_skill` 调度工具 | ✅ 可用 |
 | 脚本型技能（任意语言的子进程，stdin/stdout envelope） | ✅ 可用 |
+| **Agent 型技能**（`claude -p` 无头驱动，allowedTools 白名单） | ✅ 可用（N1） |
+| **first-class 独立工具**（`first_class: true` 自动注册） | ✅ 可用（N1） |
 | 异步作业：`run_mode: "async"` + `get_job` / `list_jobs` | ✅ 可用（N0.5） |
 | Streamable HTTP + Bearer 认证 + `/health` | ✅ 可用 |
 | 全局并发限制、超时杀进程树、路径围栏、环境白名单、审计 | ✅ 可用 |
 | envelope 带内契约版本号 `v: 1` | ✅ 可用（两端同步） |
-| Agent 型技能（`claude -p` 驱动） | ⏳ N1（当前调用返回明确提示错误） |
-| first-class 独立工具（`md_stats` 等） | ⏳ N1 |
 | JobStore SQLite 持久化 / REST / UI | ⏳ N2–N4 |
 
 ## 二、架构（Node 版）
@@ -156,7 +156,7 @@ npm run parity -- <urlA> <tokenA> <urlB> <tokenB> # 双端逐工具对比（N1 �
 | --- | --- |
 | **N0（本篇）** | 核心回路 MVP |
 | **N0.5（已完成）** | 异步作业语义 + envelope 版本号进契约；并行期治理生效 |
-| N1 | AgentRunner + first-class 工具 + parity 金样 → 可切换，Python 版保留一个版本期 |
+| **N1（已完成）** | AgentRunner + first-class 工具；实弹 agent 链路通过；双端 parity 跑批待原 Python 环境 |
 | N2 | REST 出口 + JobStore SQLite + 分层定型 |
 | N3 | 授权 / scope / 上传校验 / 驱动接口 |
 | N4 | **Web UI + BFF** |

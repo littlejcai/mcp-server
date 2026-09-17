@@ -3,11 +3,8 @@
 
 import { AuditLog } from "./audit.js";
 import { errorEnvelope, type Envelope } from "./envelope.js";
-import {
-  SkillExecutionError,
-  SkillHubError,
-  UnknownJobError,
-} from "./errors.js";
+import { AgentRunner } from "./agent_runner.js";
+import { UnknownJobError, SkillHubError } from "./errors.js";
 import { type JobRecord, JobStore } from "./jobs.js";
 import { ScriptRunner } from "./runner.js";
 import { Semaphore } from "./semaphore.js";
@@ -20,6 +17,7 @@ export class Hub {
     private readonly audit: AuditLog,
     private readonly semaphore: Semaphore,
     private readonly jobStore: JobStore,
+    private readonly agentRunner?: AgentRunner,
   ) {}
 
   /** Sync execution: validate, take a semaphore slot, run, audit. */
@@ -150,13 +148,9 @@ export class Hub {
     return this.jobStore.list(limit);
   }
 
-  private runnerFor(skillId: string): ScriptRunner {
-    const type = this.registry.get(skillId).type;
-    if (type === "agent") {
-      // N1 brings AgentRunner with the full-parity milestone.
-      throw new SkillExecutionError(
-        `Agent-type skill ${JSON.stringify(skillId)} is not served by the Node MVP (planned milestone N1)`,
-      );
+  private runnerFor(skillId: string): ScriptRunner | AgentRunner {
+    if (this.registry.get(skillId).type === "agent") {
+      return this.agentRunner ?? new AgentRunner(this.registry, this.scriptRunner);
     }
     return this.scriptRunner;
   }

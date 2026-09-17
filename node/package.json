@@ -12,7 +12,7 @@
     "start": "npm run build && node dist/src/main.js",
     "dev": "node --watch dist/src/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test dist/test/",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
     "smoke": "node dist/scripts/smoke.js",
     "parity": "node dist/scripts/parity-check.js"
   },

@@ -88,10 +88,16 @@ async function main(): Promise<void> {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
     check(
-      "tools/list has the dispatcher trio + job tools",
-      ["describe_skill", "get_job", "list_jobs", "list_skills", "run_skill"].every(
-        (n) => names.includes(n),
-      ),
+      "tools/list has dispatcher + job + first-class tools",
+      [
+        "describe_skill",
+        "get_job",
+        "list_jobs",
+        "list_skills",
+        "md_stats",
+        "note_worthiness",
+        "run_skill",
+      ].every((n) => names.includes(n)),
       `(got ${names.join(", ")})`,
     );
 
@@ -126,6 +132,17 @@ async function main(): Promise<void> {
       "run_skill(md-stats) succeeds on inbox/sample-note.md",
       envelope?.status === "success" && envelope?.v === 1 && typeof envelope?.data?.words === "number",
       JSON.stringify(envelope ?? textOf(run)),
+    );
+
+    const firstClass = await client.callTool({
+      name: "md_stats",
+      arguments: { source_path: "inbox/sample-note.md" },
+    });
+    const fcEnvelope = firstClass.isError ? null : JSON.parse(textOf(firstClass));
+    check(
+      "first-class md_stats succeeds",
+      fcEnvelope?.status === "success" && typeof fcEnvelope?.data?.words === "number",
+      JSON.stringify(fcEnvelope ?? textOf(firstClass)),
     );
 
     const submit = await client.callTool({

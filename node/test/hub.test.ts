@@ -94,15 +94,5 @@ describe("Hub", () => {
     expect(lines[0]).toMatchObject({ status: "rejected" });
     expect(String(lines[0].reason)).toMatch(/Input validation failed/);
   });
-
-  it("rejects agent-type skills until N1 lands", async () => {
-    const fixture = buildFixture();
-    const hub = makeHub(
-      fixture,
-      new ScriptRunner(fixture.registry, fixture.workspaceRoot),
-    );
-    await expect(hub.execute("agent-demo", {})).rejects.toThrow(
-      /Agent-type skill.*N1/s,
-    );
-  });
 });
+

@@ -4,10 +4,10 @@ skill-hub 服务端的 Node.js/TypeScript 实现，与根目录的 Python/FastMC
 **协议契约完全一致**（MCP 工具面、envelope、registry.yaml、审计格式）。
 方案与里程碑见 [docs/NODE-PLAN.md](../docs/NODE-PLAN.md)。
 
-当前为 N0/N0.5：`list_skills` / `describe_skill` / `run_skill`（支持
-`run_mode: "async"`）+ `get_job` / `list_jobs` 五个工具 + 脚本型技能执行 +
-Streamable HTTP + Bearer 认证。Agent 型技能与 first-class 动态工具在 N1
-落地（调用会得到明确的 "planned milestone N1" 错误）。
+当前为 N1（与 Python v1 契约对齐）：`list_skills` / `describe_skill` /
+`run_skill`（支持 `run_mode: "async"`）+ `get_job` / `list_jobs` +
+first-class 独立工具（`first_class: true` 自动注册）+ 脚本型与 Agent 型
+（`claude -p`）技能执行 + Streamable HTTP + Bearer 认证。
 
 ## 使用
 

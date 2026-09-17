@@ -78,7 +78,7 @@ envelope 与 Python 版一致；
 |---|---|---|---|---|
 | **N0** | v0.1 | **MVP**：核心回路（见上） | ≈ M0 证明 | Gate-NT0 |
 | **N0.5** | v0.2 | **契约升级（已完成）**：异步作业语义（`run_mode` + `get_job`/`list_jobs` + 内存 JobStore，从 N2 提前）；envelope 带内版本号 `v: 1`（两端同步）；§2.5 并行期治理生效 | 契约地基 | 全套件 58/58 + 实弹 11/11 |
-| **N1** | v0.3 | **完整契约对齐**：AgentRunner（`claude -p`，stdin prompt、结果文件回读、树击杀）+ first-class 动态工具（JSON Schema→zod）+ parity 全量金样测试 | ≈ Python v1 全量 | Gate-NT1：五条 parity 原则全过；此后可切流，Python 版保留一个版本期 |
+| **N1** | v0.3 | **完整契约对齐（已完成）**：AgentRunner（`claude -p`，stdin prompt、结果文件回读、树击杀、runtime.args 夹具通道）+ first-class 动态工具（JSON Schema→zod）+ parity 交集脚本 | ≈ Python v1 全量 | 代码侧与实弹 agent 链路已过；**双端 parity 已跑通**（2026-09-17 本机 Python venv + Node 分端口实测，PARITY OK），切流条件满足，见 §2.5 |
 | **N2** | v0.4 | **地基**：server/api/core 分层定型；REST API 出口（UI 消费用，与 MCP 同一执行核）；JobStore 内存→SQLite 持久化；`skillhub` CLI 入口 | M1 | REST 与 MCP 同契约；JobStore 可换实现 |
 | **N3** | v0.5 | **信任与隔离**：主体/scope/风险上限授权；上传第一阶段（仅 SKILL.md 校验）；审计查询 API；驱动接口（容器隔离） | M2 | 陌生代码不可越权；授权关掉后核心功能不回归 |
 | **N4** | v0.6 | **产品可用（本项目初衷）**：Web UI（技能目录/调用记录/审计可视化/作业面板）+ BFF 或直连 N2 REST；用户管理界面；SKILL.md 上传流 | M3 | 沿用 Gate-3：**关掉 UI，hub 全功能不受影响；UI 只是普通客户端** |
@@ -124,3 +124,10 @@ N4 依赖 N2（REST）+ N3（授权）；N5 依赖 N3 的签名与驱动接口�
    rejected，其他→failed，成功→success）。JobStore 为内存实现（重启即失），
    N2 换 SQLite 时保持同一记录形状。`v` 字段为 envelope 带内契约版本号，
    由 hub 强制盖戳（永不取自技能输出），两端实现已同步。
+9. **Agent runtime.args 附加通道**：Python 版 AgentRunner 忽略 registry 的
+   `runtime.args`；Node 版把它附加在 CLI 旗标之前——真实技能（无 args）行为
+   不变，同时让测试用 fake-claude 夹具走与生产完全相同的代码路径（无 mock）。
+   另：工作区 `temp/` 由 AgentRunner 自动创建（Python 假定已存在）。
+10. **first-class 注册按技能粒度容错**：Python 版整个注册循环共享一个
+    try/catch（一条坏记录会吞掉后续所有工具）；Node 版按技能隔离，坏记录
+    只跳过自己。

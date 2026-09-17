@@ -81,7 +81,7 @@ describe("HTTP layer", () => {
 });
 
 describe("MCP tool surface over streamable HTTP", () => {
-  it("lists exactly the dispatcher and job tools", async () => {
+  it("lists dispatcher, job, and first-class tools", async () => {
     const client = await makeClient();
     try {
       const { tools } = await client.listTools();
@@ -90,8 +90,12 @@ describe("MCP tool surface over streamable HTTP", () => {
         "get_job",
         "list_jobs",
         "list_skills",
+        "md_stats_js",
         "run_skill",
       ]);
+      // first-class descriptions carry the risk level, mirroring Python
+      const stats = tools.find((t) => t.name === "md_stats_js")!;
+      expect(stats.description).toMatch(/workspace_write; dry_run defaults to true/);
     } finally {
       await client.close();
     }
@@ -189,6 +193,22 @@ describe("MCP tool surface over streamable HTTP", () => {
     }
   });
 
+  it("serves first-class tools as first-class citizens over HTTP", async () => {
+    const client = await makeClient();
+    try {
+      const result = await client.callTool({
+        name: "md_stats_js",
+        arguments: { source_path: "inbox/a.md" },
+      });
+      expect(result.isError).toBeFalsy();
+      const envelope = JSON.parse(textOf(result));
+      expect(envelope.status).toBe("success");
+      expect(envelope.data.words).toBe(12);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("maps hub errors to tool errors with the same keywords as Python", async () => {
     const client = await makeClient();
     try {
@@ -215,13 +235,6 @@ describe("MCP tool surface over streamable HTTP", () => {
       });
       expect(escape.isError).toBe(true);
       expect(textOf(escape)).toMatch(/outside the allowed workspace/);
-
-      const agent = await client.callTool({
-        name: "run_skill",
-        arguments: { skill_id: "agent-demo", inputs: {} },
-      });
-      expect(agent.isError).toBe(true);
-      expect(textOf(agent)).toMatch(/Agent-type skill/);
     } finally {
       await client.close();
     }

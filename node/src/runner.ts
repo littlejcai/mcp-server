@@ -66,8 +66,9 @@ function whichSync(name: string): string | null {
   return null;
 }
 
-function killTree(child: ChildProcess): void {
-  /** Terminate the whole child tree; plain kill() leaks grandchildren. */
+/** Terminate the whole child tree; plain kill() leaks grandchildren.
+ * Shared with AgentRunner (same timeout semantics). */
+export function killTree(child: ChildProcess): void {
   if (child.pid === undefined) return;
   if (process.platform === "win32") {
     try {

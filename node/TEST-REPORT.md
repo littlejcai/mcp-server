@@ -1,10 +1,11 @@
 # skill-hub Node 版（N0 MVP）测试报告
 
-- 日期：2026-09-16（N0.5 修订：异步作业与 envelope 版本号入契约后更新）
-- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0 + N0.5）
-- 结论：**58/58 自动化测试通过（全真进程：真实子进程、真实超时击杀、真实 HTTP）；
-  端到端实弹冒烟 11/11 通过（真实服务 + 真实技能脚本 + 独立 MCP client，
-  含异步作业往返）；类型检查（strict TS）零错误；全套件耗时约 9s**
+- 日期：2026-09-16（N1 修订：AgentRunner + first-class 落地后更新）
+- 被测对象：`node/` 目录 —— skill-hub 服务端的 Node.js/TypeScript 实现（N0–N1）
+- 结论：**70/70 自动化测试通过（全真进程：真实子进程、真实超时杀树、真实 HTTP）；
+  实弹冒烟 12/12（含 first-class 直调）；真实 Agent 技能（note-worthiness，
+  内层真 Claude Code）端到端通过（42s，四维评分完整返回）；
+  strict TS 零错误**
 
 ## 1. 测试环境
 
@@ -18,13 +19,15 @@
 | 被调技能运行时 | python3（真实 md-stats 技能脚本）；Node fixture 技能 |
 | 运行器 | node:test（vitest 因本机环境病理性停滞被替换，见 §5） |
 
-## 2. 自动化测试（58/58 通过，13 个套件）
+## 2. 自动化测试（70/70 通过，16 个套件）
 
 | 测试文件 | 覆盖模块 | 用例 | 结果 |
 | --- | --- | --- | --- |
-| app.test.ts | app.ts（HTTP 层 + MCP 工具面） | 8 | 全过 |
+| agent.test.ts（N1 新增） | agent_runner.ts（真 fake-claude 进程） | 9 | 全过 |
+| app.test.ts | app.ts（HTTP 层 + MCP 工具面 + first-class） | 9 | 全过 |
 | envelope.test.ts | envelope.ts（含 v 版本戳） | 10 | 全过 |
-| hub.test.ts | hub.ts（执行核） | 4 | 全过 |
+| first_class.test.ts（N1 新增） | first_class.ts（JSON Schema→zod） | 3 | 全过 |
+| hub.test.ts | hub.ts（执行核） | 3 | 全过 |
 | job.test.ts（N0.5 新增） | jobs.ts + hub.submit（异步作业） | 6 | 全过 |
 | registry.test.ts | registry.ts | 9 | 全过 |
 | runner.test.ts | runner.ts（真实子进程） | 10 | 全过 |
@@ -43,13 +46,14 @@
 | serializes executions under the limit | 并发 2 路，最大重叠数 = 1 | test_global_semaphore_serializes_executions | ✅ |
 | runs async jobs through the same global semaphore | 异步 2 路提交，最大重叠数 = 1（作业与同步共用限流） | （N0.5 新语义） | ✅ |
 | submits an async job and resolves it via get_job | MCP 层异步往返：submit → 轮询 → succeeded + envelope | （N0.5 新语义） | ✅ |
+| **AgentRunner 九连**：结果文件回读 / CLI 文本回退 / fenced 容错 / 退出码+脱敏 / 超时杀树 / 缺 CLI / 坏 provider / 缺 SKILL.md / 路径围栏 | 全部经 fake-claude 夹具走真实进程，与 Python test_agent_runner.py 逐条对应 | test_agent_runner.py 11 例 | ✅ |
 | maps hub errors to tool errors | 未知技能 / Schema 违规 / 路径逃逸关键词一致 | test_server.py 4 例 | ✅ |
 | rejects /mcp without or with wrong token | 无/错 token 均 401，timingSafeEqual 比较 | test_mcp_without_token_is_401 等 | ✅ |
 | answers 405 for GET /mcp | 无状态模式协议允许行为 | （Python 为有状态 SSE，N2 对齐） | ✅ |
 | symlink escape rejected | 链接在内、目标在外 → 拒绝 | test_security.py 同类 | ✅ |
 | meta-schema rejects unknown runtime keys | `timeout_second` 拼写错误 → registry 拒载 | （防 typo 静默失效） | ✅ |
 
-## 3. 实弹验证（真实服务器，非 mock，11/11）
+## 3. 实弹验证（真实服务器，非 mock，12/12 + Agent 全链路）
 
 启动 `node dist/src/main.js`（读仓库共享 config.yaml；因本机 `python` 不在
 PATH，用 `HUB_REGISTRY_PATH` 覆盖将 md-stats 的可执行改为 `python3`，
@@ -60,15 +64,22 @@ HTTP + Bearer 全链路验证：
 | --- | --- | --- |
 | 1 | `GET /health` 免鉴权 | ✅ 200 `{ok:true, skills:2}` |
 | 2 | 无 token / 错 token 访问 `/mcp` | ✅ 401 |
-| 3 | `tools/list` 发现 5 个工具（3 调度 + 2 作业） | ✅ |
-| 4 | `list_skills` 返回真实 registry 目录（md-stats + note-worthiness） | ✅ |
+| 3 | `tools/list` 发现 7 个工具（3 调度 + 2 作业 + 2 first-class） | ✅ |
+| 4 | `list_skills` 返回真实 registry 目录 | ✅ |
 | 5 | `describe_skill(md-stats)` 暴露 input schema 与超时 | ✅ |
-| 6 | **`run_skill(md-stats)` 真实执行 Python 技能脚本**（stdin envelope → python3 子进程 → stdout envelope，含 `v: 1` 版本戳） | ✅ status=success |
-| 7 | **`run_skill(async)` → `get_job` 轮询至 succeeded**，envelope 完整 | ✅ |
-| 8 | `list_jobs` 返回最近提交（含 7 的 job） | ✅ |
-| 9 | 未知技能 → `isError=true` + "Unknown skill" | ✅ |
-| 10 | 路径逃逸 `../../etc` → `isError=true` + "outside the allowed workspace" | ✅ |
-| 11 | 审计日志落盘（成功/拒绝均写入，与 Python 版共用 `logs/audit.jsonl`，格式一致） | ✅ |
+| 6 | `run_skill(md-stats)` 真实执行 Python 技能脚本（含 `v: 1` 版本戳） | ✅ |
+| 7 | **first-class `md_stats` 直调**（不走 run_skill 的独立工具路径） | ✅ |
+| 8 | `run_skill(async)` → `get_job` 轮询至 succeeded，envelope 完整 | ✅ |
+| 9 | `list_jobs` 返回最近提交 | ✅ |
+| 10 | 未知技能 → `isError=true` + "Unknown skill" | ✅ |
+| 11 | 路径逃逸 `../../etc` → `isError=true` + "outside the allowed workspace" | ✅ |
+| 12 | 审计日志落盘（与 Python 版共用 `logs/audit.jsonl`，格式一致） | ✅ |
+
+**Agent 全链路（真 Claude Code 内层）**：`run_skill(note-worthiness, async)`
+提交 → 内层真实 `claude -p --output-format json --max-turns 15
+--allowedTools Read,Glob,Grep,Write --model haiku` 执行 → 42s 返回完整
+envelope（四维评分、总分 13、两个切入角度、dry_run 警示）→ `get_job`
+succeeded。与 Python 版当年的同链路验证（verdict=strong, 26–47s）互为印证。
 
 ## 4. 移植中发现并修复的问题
 
@@ -98,18 +109,23 @@ HTTP + Bearer 全链路验证：
 3. `HUB_REGISTRY_PATH` / `HUB_WORKSPACE_ROOT` 环境变量覆盖（测试/冒烟便利，
    默认值仍来自共享 config.yaml）；
 4. `GET /mcp`（SSE 长流）返回 405——无状态模式的协议允许行为，N2 启用有状态会话；
-5. 工具结果以 JSON 文本承载（信息等价，N1 评估 structuredContent）；
-6. 运行器与运行路径差异（见 §4 第 4/5 条）。
+5. 工具结果以 JSON 文本承载（信息与 Python 版 structured content 等价）；
+6. 运行器与运行路径差异（见 §4 第 4/5 条）；
+7. Agent `runtime.args` 附加在 CLI 旗标之前（Python 忽略该字段）——真实技能
+   不受影响，测试夹具得以走生产代码路径；工作区 `temp/` 由 AgentRunner 自动创建；
+8. first-class 注册按技能粒度容错（Python 版整个循环一个 try/catch，
+   一条坏记录会吞掉后续所有工具）。
 
 ## 6. 剩余未测试项（如实清单）
 
-- **Agent 型技能**：N0 明确拒绝（返回 "planned milestone N1" 错误），执行链路未实现
-- **first-class 动态工具**：未实现（N1）
-- **parity 双端自动对比**：脚本就绪（`npm run parity`），未实际双端跑（需同时运行
-  Python 版；本机 `python` 缺失，需对端以 `python3` 起 registry 或换机验证）
+- **双端 parity 跑批（Gate-NT1 最后一关）**：**已完成**（2026-09-17 本机实测：
+  Python 3.12 venv 起 Python 版 :8800、Node 版 :8811，`npm run parity` 全项
+  一致，PARITY OK；交集 = 5 个共同工具，Node 先行 = get_job/list_jobs）——
+  已从待办移除，见 §8
 - **Windows 平台**：已按 Python 版移植 PATHEXT/taskkill/大小写不敏感 containment，
   但本机为 macOS，未实机验证
-- 覆盖率计量未接入（Python 版为 92%；N1 计划接入 c8 后对齐口径）
+- **真实 note-worthiness 已实测通过**（见 §3 Agent 全链路），但仅 macOS 单环境
+- 覆盖率计量未接入（Python 版为 92%；计划接入 c8 后对齐口径）
 - **Python 侧 envelope `v` 字段改动需在原 Windows 环境复跑 pytest**
   （本机无 Python 测试环境；改动为两行 + 测试同步，test_envelope.py 已更新）
 - 真实第三方设备（手机/Notion 连接器）、Tailscale、浸泡测试——与 Python 版遗留项相同
@@ -135,13 +151,18 @@ HTTP + Bearer 全链路验证：
 
 ## 8. 结论
 
-N0 验收门（Gate-NT0）三条全部通过：① 测试全绿；② 真实服务经 HTTP+Bearer 调
-`run_skill` 成功执行真实技能，envelope 与 Python 版一致；③ 三类错误路径
-（未知技能 / Schema 违规 / 路径逃逸）消息关键词一致。
+Gate-NT0 三条全部通过（见上版记录）；**N1 范围全部落地**：AgentRunner 与
+first-class 动态工具实现并验证——自动化 70/70，实弹 12/12，真实 note-worthiness
+agent 全链路通过（42s，内层真 Claude Code，四维评分完整返回）。
+移植过程中测试套件累计捕获 7 个问题，其中 envelope 无限循环、tsx 子进程
+加载器注入两个属于必然在真实使用中暴露的深层缺陷——契约测试先行再移植的
+策略得到验证。
 
-移植过程中测试套件共捕获 6 个问题，其中 2 个（envelope 无限循环、tsx 子进程
-加载器注入）属于必然在真实使用中暴露的深层缺陷——契约测试先行再移植的
-策略得到验证。Agent 型技能与 first-class 工具按计划落在 N1。
+**切流条件（已满足）**：2026-09-17 本机同时起 Python 版（venv，:8800）与
+Node 版（:8811），`npm run parity` 五条原则全部通过——tools/list 交集一致且
+Node 先行工具（get_job/list_jobs）符合预期、list_skills 一致、
+describe_skill(md-stats) 一致、run_skill(md-stats) envelope 逐字段一致。
+Node 版即可成为唯一实现，Python 版保留一个版本期退役。
 
 复测命令：
 
